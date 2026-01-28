@@ -1,0 +1,58 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
+
+import { Setting } from './settings/entities/setting.entity';
+import { Domain } from './domains/entities/domain.entity';
+import { Subscription } from './subscriptions/entities/subscription.entity';
+import { Inbound } from './inbounds/entities/inbound.entity';
+import { XuiModule } from './xui/xui.module';
+import { InboundsModule } from './inbounds/inbounds.module';
+import { RotationModule } from './rotation/rotation.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { DomainsModule } from './domains/domains.module';
+import { SettingsModule } from './settings/settings.module';
+import { JwtAuthGuard } from './auth/jwt-auth.guard';
+import { APP_GUARD } from '@nestjs/core';
+import { AuthModule } from './auth/auth.module';
+import { ClientModule } from './client/client.module';
+import { TunnelsModule } from './tunnels/tunnels.module';
+import { Tunnel } from './tunnels/entities/tunnel.entity';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
+    TypeOrmModule.forRoot({
+      type: 'postgres',
+      host: process.env.DB_HOST,
+      port: parseInt(process.env.DB_PORT || '5432', 10),
+      username: process.env.DB_USERNAME,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      entities: [Setting, Domain, Subscription, Inbound, Tunnel],
+      synchronize: true,
+    }),
+    XuiModule,
+    InboundsModule,
+    RotationModule,
+    SubscriptionsModule,
+    DomainsModule,
+    SettingsModule,
+    AuthModule,
+    ClientModule,
+    TunnelsModule
+  ],
+  controllers: [AppController],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+  ],
+})
+export class AppModule { }
