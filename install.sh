@@ -4,7 +4,7 @@ set -euo pipefail
 #################################
 # КОНФИГУРАЦИЯ И ПЕРЕМЕННЫЕ
 #################################
-REPO_URL="https://github.com/denpiligrim/3dp-manager/archive/refs/heads/dp-gui.tar.gz"
+REPO_URL="https://github.com/denpiligrim/3dp-manager/archive/refs/heads/main.tar.gz"
 PROJECT_DIR="/opt/3dp-manager"
 
 # Цвета для вывода

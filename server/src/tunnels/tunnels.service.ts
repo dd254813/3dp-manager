@@ -48,7 +48,7 @@ export class TunnelsService {
 
     this.logger.log(`Начинаем установку редиректа на ${tunnel.ip} -> ${mainServerIp}`);
 
-    const command = `export ORIGIN_IP="${mainServerIp}" && bash <(curl -fsSL https://raw.githubusercontent.com/denpiligrim/3dp-manager/dp-gui/forwarding_install.sh)`;
+    const command = `export ORIGIN_IP="${mainServerIp}" && bash <(curl -fsSL https://raw.githubusercontent.com/denpiligrim/3dp-manager/main/forwarding_install.sh)`;
 
     try {
       const output = await this.sshService.executeCommand({
