@@ -2,11 +2,11 @@
 
 <p><img src="https://denpiligrim.ru/storage/images/3dp-manager.png" alt="3dp-manager preview"></p>
 
-![Version](https://img.shields.io/badge/version-2.0.0-blue.svg) [![License](https://img.shields.io/badge/license-GPL%20V3-blue.svg?longCache=true)](https://www.gnu.org/licenses/gpl-3.0) [![Telegram](https://img.shields.io/badge/Telegram-26A5E4?style=flat&logo=telegram&logoColor=white)](https://t.me/denpiligrim_web) [![YouTube Channel Subscribers](https://img.shields.io/youtube/channel/subscribers/UCOv2tFFYDY4mXOM60PVz8zw)](https://www.youtube.com/@denpiligrim)
+![Version](https://img.shields.io/badge/version-2.0.1-blue.svg) [![License](https://img.shields.io/badge/license-GPL%20V3-blue.svg?longCache=true)](https://www.gnu.org/licenses/gpl-3.0) [![Telegram](https://img.shields.io/badge/Telegram-26A5E4?style=flat&logo=telegram&logoColor=white)](https://t.me/denpiligrim_web) [![YouTube Channel Subscribers](https://img.shields.io/youtube/channel/subscribers/UCOv2tFFYDY4mXOM60PVz8zw)](https://www.youtube.com/@denpiligrim)
 
 # 3DP-MANAGER
 
-Утилита для автогенерации инбаундов к панели [3x-ui](https://github.com/MHSanaei/3x-ui), формирования единой подписки и настройки перенаправления трафика с промежуточного сервера на основной.
+Утилита для автогенерации инбаундов к панели [3x-ui](https://github.com/MHSanaei/3x-ui), формирования единой подписки и настройки перенаправления трафика с промежуточного сервера на основной. Утилита, начиная с версии 2.0.0 имеет графический интерфейс и простые пользовательские настройки.
 
 **Поддержать проект**
 
@@ -61,10 +61,7 @@
 
 ## Установка
 
-> [!WARNING]  
-> Утилита работает на основном сервере
-
-У вас должны быть установлены пакеты на сервере `curl`, `jq` командой: `apt install curl jq` и панель управления `3x-ui`, которую можно установить командой: `bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)`
+У вас должна быть установлена панель управления `3x-ui`, которую можно поставить командой: `bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)`
 Установите проект на сервер командой:
 
 ```bash
@@ -72,12 +69,6 @@ bash <(curl -fsSL https://raw.githubusercontent.com/denpiligrim/3dp-manager/main
 ```
 
 <sup>Краткое описание: запускает скрипт установки и разворачивает контейнеры и сервисы.</sup>
-
-Если панель 3x-ui находится в Docker контейнере, установите командой:
-
-```bash
-REMOTE_PANEL=true bash <(curl -fsSL https://raw.githubusercontent.com/denpiligrim/3dp-manager/main/install.sh)
-```
 
 ## Обновление
 
@@ -112,7 +103,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/denpiligrim/3dp-manager/main
 bash <(curl -fsSL https://raw.githubusercontent.com/denpiligrim/3dp-manager/main/forwarding_install.sh)
 ```
 
-<sup>Краткое описание: добавляет правила перенаправления и создает сервис для обновления подписки.</sup>
+<sup>Краткое описание: добавляет правила перенаправления.</sup>
 
 ## Удаление перенаправления
 
@@ -120,19 +111,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/denpiligrim/3dp-manager/main
 bash <(curl -fsSL https://raw.githubusercontent.com/denpiligrim/3dp-manager/main/forwarding_delete.sh)
 ```
 
-<sup>Краткое описание: удаляет правила и отключает сервис перенаправления.</sup>
+<sup>Краткое описание: удаляет правила перенаправления.</sup>
 
 ---
-
-## Показать URL подписки
-
-Команда для вывода текущего URL подписки из среды контейнера:
-
-```bash
-cd /opt/3dp-manager && docker compose exec node env | grep SUB_URL | cut -d'=' -f2
-```
-
-<sup>Краткое описание: выводит статичный URL подписки, который можно использовать в клиентах. Работает как на основном, так и на промежуточном сервере.</sup>
 
 ## Сбор доменов из мульти-подписок
 
@@ -143,29 +124,6 @@ node get_domains.js
 ```
 
 <sup>Краткое описание: добавьте ссылку на мульти-подписку в скрипт и запустите команду — на выходе получите список доменов. Необходим `Node.js` для работы скрипта.</sup>
-
-## Использование собственного белого списка
-
-1. Подготовьте файл в формате `whitelist.txt`.
-2. Переименуйте на `my_whitelist.txt` и скопируйте в папку `/opt/3dp-manager/app`.
-
-```bash
-cd /opt/3dp-manager && docker cp ./app/my_whitelist.txt node:/app/my_whitelist.txt
-```
-
-<sup>Краткое описание: добавляет ваш файл доменов в контейнер приложения. Чтобы сразу же сгенерировать инбаунды с новым списком, выполните `docker exec -it node sh` и затем `node rotate.js`.</sup>
-
-## Ручной запуск генерации
-
-Чтобы создать новые инбаунды, выполните команды поочередно:
-
-```bash
-cd /opt/3dp-manager
-docker exec -it node sh
-node rotate.js
-```
-
-<sup>Краткое описание: выполняет немедленную генерацию инбаундов, не влияя на заданный интервал ротации.</sup>
 
 ---
 
