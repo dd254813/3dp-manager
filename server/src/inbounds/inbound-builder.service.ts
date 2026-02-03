@@ -35,7 +35,7 @@ export class InboundBuilderService {
         },
         tcpSettings: { acceptProxyProtocol: false, header: { type: 'none' } }
       }),
-      sniffing: JSON.stringify({ enabled: true, destOverride: ['http', 'tls', 'quic', 'fakedns'], metadataOnly: false, routeOnly: false })
+      sniffing: JSON.stringify({ enabled: false, destOverride: ['http', 'tls', 'quic', 'fakedns'], metadataOnly: false, routeOnly: false })
     };
   }
 
@@ -47,7 +47,7 @@ export class InboundBuilderService {
       protocol: 'vless',
       remark: `vless-xhttp-reality`,
       settings: JSON.stringify({
-        clients: [{ id: uuid, flow: 'xtls-rprx-vision', email: uuid, enable: true, limitIp: 0, totalGB: 0, expiryTime: 0, tgId: '', subId: '', reset: 0 }],
+        clients: [{ id: uuid, flow: '', email: uuid, enable: true, limitIp: 0, totalGB: 0, expiryTime: 0, tgId: '', subId: '', reset: 0 }],
         decryption: 'none',
         encryption: 'none',
         fallbacks: []
@@ -66,9 +66,23 @@ export class InboundBuilderService {
           shortIds: [crypto.randomBytes(4).toString('hex'), crypto.randomBytes(4).toString('hex')],
           settings: { publicKey: publicKey, fingerprint: 'random', serverName: '', spiderX: '/' }
         },
-        xhttpSettings: { path: '/', mode: 'auto' }
+        xhttpSettings: {
+          host: domain,
+          path: "/",
+          mode: "auto",
+          noSSEHeader: false,
+          scMaxBufferedPosts: 30,
+          scMaxEachPostBytes: "1000000",
+          scStreamUpServerSecs: "20-80",
+          xPaddingBytes: "100-1000"
+        }
       }),
-      sniffing: JSON.stringify({ enabled: true, destOverride: ['http', 'tls', 'quic', 'fakedns'], metadataOnly: false, routeOnly: false })
+      sniffing: JSON.stringify({
+        enabled: false,
+        destOverride: ["http", "tls", "quic", "fakedns"],
+        metadataOnly: false,
+        routeOnly: false
+      })
     };
   }
 
@@ -77,17 +91,28 @@ export class InboundBuilderService {
     return {
       enable: true,
       port,
-      protocol: 'vless',
-      remark: `vless-grpc-reality`,
+      protocol: "vless",
+      remark: "vless-reality-grpc",
       settings: JSON.stringify({
-        clients: [{ id: uuid, flow: '', email: uuid, enable: true, limitIp: 0, totalGB: 0, expiryTime: 0, tgId: '', subId: '', reset: 0 }],
-        decryption: 'none',
-        encryption: 'none',
+        clients: [{
+          id: uuid,
+          email: uuid,
+          enable: true,
+          flow: "",
+          limitIp: 0,
+          totalGB: 0,
+          expiryTime: 0,
+          tgId: "",
+          subId: "",
+          reset: 0
+        }],
+        decryption: "none",
+        encryption: "none",
         fallbacks: []
       }),
       streamSettings: JSON.stringify({
-        network: 'grpc',
-        security: 'reality',
+        network: "grpc",
+        security: "reality",
         externalProxy: [],
         realitySettings: {
           show: false,
@@ -99,9 +124,18 @@ export class InboundBuilderService {
           shortIds: [crypto.randomBytes(4).toString('hex')],
           settings: { publicKey: publicKey, fingerprint: 'random', serverName: '', spiderX: '/' }
         },
-        grpcSettings: { serviceName: 'grpc', multiMode: false }
+        grpcSettings: {
+          serviceName: "myservice",
+          authority: domain,
+          multiMode: false,
+        }
       }),
-      sniffing: JSON.stringify({ enabled: true, destOverride: ['http', 'tls', 'quic', 'fakedns'] })
+      sniffing: JSON.stringify({
+        enabled: false,
+        destOverride: ["http", "tls", "quic", "fakedns"],
+        metadataOnly: false,
+        routeOnly: false
+      })
     };
   }
 
@@ -113,18 +147,39 @@ export class InboundBuilderService {
       protocol: 'vless',
       remark: `vless-ws`,
       settings: JSON.stringify({
-        clients: [{ id: uuid, flow: '', email: uuid, enable: true, limitIp: 0, totalGB: 0, expiryTime: 0, tgId: '', subId: '', reset: 0 }],
-        decryption: 'none',
-        encryption: 'none',
+        clients: [{
+          id: uuid,
+          email: uuid,
+          enable: true,
+          flow: "",
+          limitIp: 0,
+          totalGB: 0,
+          expiryTime: 0,
+          tgId: "",
+          subId: "",
+          reset: 0
+        }],
+        decryption: "none",
+        encryption: "none",
         fallbacks: []
       }),
       streamSettings: JSON.stringify({
-        network: 'ws',
-        security: 'none',
+        network: "ws",
+        security: "none",
         externalProxy: [],
-        wsSettings: { path: '/', headers: { Host: domain } }
+        wsSettings: {
+          host: domain,
+          path: "/",
+          acceptProxyProtocol: false,
+          heartbeatPeriod: 0,
+        }
       }),
-      sniffing: JSON.stringify({ enabled: true, destOverride: ['http', 'tls', 'quic', 'fakedns'] })
+      sniffing: JSON.stringify({
+        enabled: false,
+        destOverride: ["http", "tls", "quic", "fakedns"],
+        metadataOnly: false,
+        routeOnly: false
+      })
     };
   }
 
@@ -136,29 +191,77 @@ export class InboundBuilderService {
       protocol: 'vmess',
       remark: 'vmess-tcp',
       settings: JSON.stringify({
-        clients: [{ id: uuid, alterId: 0, email: uuid, limitIp: 0, totalGB: 0, expiryTime: 0, enable: true, tgId: '', subId: '', reset: 0 }],
-        disableInsecureEncryption: false
+        clients: [{
+          id: uuid,
+          flow: "",
+          email: uuid,
+          enable: true,
+          limitIp: 0,
+          totalGB: 0,
+          expiryTime: 0,
+          tgId: "",
+          subId: "0",
+          alterId: "0",
+          reset: 0
+        }],
       }),
-      streamSettings: JSON.stringify({ network: 'tcp', security: 'none', tcpSettings: { header: { type: 'http', request: { method: 'GET', path: ['/'], headers: { Host: [] } } } } }),
-      sniffing: JSON.stringify({ enabled: true, destOverride: ['http', 'tls', 'quic', 'fakedns'] })
+      streamSettings: JSON.stringify({
+        network: "tcp",
+        security: "none",
+        tcpSettings: {
+          acceptProxyProtocol: false,
+          header: { type: "none" }
+        }
+      }),
+      sniffing: JSON.stringify({
+        enabled: false,
+        destOverride: ["http", "tls", "quic", "fakedns"],
+        metadataOnly: false,
+        routeOnly: false
+      })
     };
   }
 
   buildShadowsocksTcp(params: { port: number; uuid: string }) {
-    const { port, uuid } = params; 
+    const { port, uuid } = params;
     return {
       enable: true,
       port,
       protocol: 'shadowsocks',
       remark: 'shadowsocks-tcp',
       settings: JSON.stringify({
-        method: 'aes-256-gcm',
-        password: uuid,
-        network: 'tcp,udp',
-        clients: []
+        clients: [{
+          id: "",
+          flow: "",
+          email: uuid,
+          password: crypto.randomBytes(32).toString("base64"),
+          enable: true,
+          limitIp: 0,
+          totalGB: 0,
+          expiryTime: 0,
+          tgId: "",
+          subId: "",
+          reset: 0
+        }],
+        ivCheck: false,
+        method: "2022-blake3-aes-256-gcm",
+        network: "tcp",
+        password: crypto.randomBytes(32).toString("base64")
       }),
-      streamSettings: JSON.stringify({ network: 'tcp', security: 'none' }),
-      sniffing: JSON.stringify({ enabled: true, destOverride: ['http', 'tls', 'quic', 'fakedns'] })
+      streamSettings: JSON.stringify({
+        network: "tcp",
+        security: "none",
+        tcpSettings: {
+          acceptProxyProtocol: false,
+          header: { type: "none" }
+        }
+      }),
+      sniffing: JSON.stringify({
+        enabled: false,
+        destOverride: ["http", "tls", "quic", "fakedns"],
+        metadataOnly: false,
+        routeOnly: false
+      })
     };
   }
 
@@ -170,12 +273,24 @@ export class InboundBuilderService {
       protocol: 'trojan',
       remark: `trojan-tcp-reality`,
       settings: JSON.stringify({
-        clients: [{ password: uuid, email: uuid, limitIp: 0, totalGB: 0, expiryTime: 0, enable: true, tgId: '', subId: '', reset: 0 }],
+        clients: [{
+          id: uuid,
+          email: uuid,
+          password: crypto.randomBytes(8).toString("hex"),
+          enable: true,
+          flow: "",
+          limitIp: 0,
+          totalGB: 0,
+          expiryTime: 0,
+          tgId: "",
+          subId: "",
+          reset: 0
+        }],
         fallbacks: []
       }),
       streamSettings: JSON.stringify({
-        network: 'tcp',
-        security: 'reality',
+        network: "tcp",
+        security: "reality",
         externalProxy: [],
         realitySettings: {
           show: false,
@@ -184,11 +299,34 @@ export class InboundBuilderService {
           dest: `${domain}:443`,
           serverNames: [domain],
           privateKey: privateKey,
-          shortIds: [crypto.randomBytes(4).toString('hex')],
-          settings: { publicKey: publicKey, fingerprint: 'random', serverName: '', spiderX: '/' }
+          shortIds: [
+            crypto.randomBytes(4).toString("hex"),
+            crypto.randomBytes(3).toString("hex"),
+            crypto.randomBytes(8).toString("hex"),
+            crypto.randomBytes(2).toString("hex"),
+            crypto.randomBytes(2).toString("hex"),
+            crypto.randomBytes(2).toString("hex"),
+            crypto.randomBytes(2).toString("hex"),
+            crypto.randomBytes(4).toString("hex")
+          ],
+          settings: {
+            publicKey: publicKey,
+            fingerprint: "random",
+            serverName: "",
+            spiderX: "/"
+          }
+        },
+        tcpSettings: {
+          acceptProxyProtocol: false,
+          header: { type: "none" }
         }
       }),
-      sniffing: JSON.stringify({ enabled: true, destOverride: ['http', 'tls', 'quic', 'fakedns'] })
+      sniffing: JSON.stringify({
+        enabled: false,
+        destOverride: ["http", "tls", "quic", "fakedns"],
+        metadataOnly: false,
+        routeOnly: false
+      })
     };
   }
 
@@ -280,7 +418,7 @@ export class InboundBuilderService {
 
     const vmessObj = {
       add: domain,
-      aid: '',
+      aid: '0',
       alpn: "",
       fp: "",
       host: "",
@@ -308,9 +446,9 @@ export class InboundBuilderService {
 
     const method = settings.method;
     const serverPassword = settings.password;
-    const finalPass = serverPassword || idOrPass;
+    const clientPassword = settings.clients[0].password;
 
-    const userInfo = `${method}:${finalPass}`;
+    const userInfo = `${method}:${serverPassword}:${clientPassword}`;
 
     const base64 = Buffer
       .from(userInfo, "utf8")

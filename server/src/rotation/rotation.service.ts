@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -13,7 +13,7 @@ import { InboundBuilderService } from '../inbounds/inbound-builder.service';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
-export class RotationService {
+export class RotationService implements OnModuleInit {
   private readonly logger = new Logger(RotationService.name);
 
   constructor(
@@ -25,6 +25,26 @@ export class RotationService {
     private inboundBuilder: InboundBuilderService,
   ) {}
 
+  async onModuleInit() {
+    await this.initDefaultSettings();
+  }
+
+  private async initDefaultSettings() {
+    const key = 'rotation_status';
+    const existing = await this.settingRepo.findOne({ where: { key } });
+
+    if (!existing) {
+      this.logger.log(`Инициализация настройки: ${key} = active`);
+      const newSetting = this.settingRepo.create({
+        key: key,
+        value: 'active',
+      });
+      await this.settingRepo.save(newSetting);
+    } else {
+        this.logger.log(`Текущий статус ротации: ${existing.value}`);
+    }
+  }
+
   @Cron(CronExpression.EVERY_MINUTE)
   async handleTicker() {
     const intervalSetting = await this.settingRepo.findOne({ where: { key: 'rotation_interval' } });
@@ -35,8 +55,10 @@ export class RotationService {
 
     const now = Date.now();
     const diffMinutes = (now - lastRun) / 1000 / 60;
+    const statusSetting = await this.settingRepo.findOne({ where: { key: 'rotation_status' } });
+    const isStopped = statusSetting?.value === 'stopped';
 
-    if (diffMinutes < intervalMinutes) {
+    if (diffMinutes < intervalMinutes || isStopped) {
       return;
     }
 
@@ -52,7 +74,7 @@ export class RotationService {
     await this.settingRepo.save(s);
   }
 
-  async performRotation() {
+  async performRotation() {    
     this.logger.log('Запуск плановой ротации...');
 
     const isLoginSuccess = await this.xuiService.login();

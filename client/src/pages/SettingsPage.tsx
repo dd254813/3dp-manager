@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Box, TextField, Button, Typography, Paper, Snackbar, Alert, Grid, Divider, InputAdornment, Stack, Chip } from '@mui/material';
+import { Box, TextField, Button, Typography, Paper, Snackbar, Alert, Grid, Divider, InputAdornment, Stack, Chip, Tooltip, IconButton } from '@mui/material';
 import api from '../api';
+import { CheckCircle, PauseCircleFilled, PlayCircleFilled, Schedule, Update } from '@mui/icons-material';
 
 const ROTATION_PRESETS = [
   { label: 'Сутки', value: 1440 },
@@ -14,6 +15,8 @@ export default function SettingsPage() {
     xui_login: '',
     xui_password: '',
     rotation_interval: '30',
+    rotation_status: 'active',
+    last_rotation_timestamp: '',
   });
 
   const [adminProfile, setAdminProfile] = useState({
@@ -125,20 +128,20 @@ export default function SettingsPage() {
     }
   };
 
-const handleForceRotate = async () => {
+  const handleForceRotate = async () => {
     if (confirm('ВНИМАНИЕ: Это немедленно обновит конфиги в подписках.\n\nИнтервал автоматической ротации НЕ будет сброшен.\n\nПродолжить?')) {
       try {
         setLoadingRotate(true);
         const res = await api.post('/rotation/rotate-all');
-        
+
         setLoadingRotate(false);
         if (res.data && res.data.success) {
           setMsg({ open: true, type: 'success', text: res.data.message || 'Ротация успешно выполнена!' });
         } else {
-          setMsg({ 
-            open: true, 
-            type: 'error', 
-            text: res.data?.message || 'Ошибка выполнения ротации' 
+          setMsg({
+            open: true,
+            type: 'error',
+            text: res.data?.message || 'Ошибка выполнения ротации'
           });
         }
       } catch (e) {
@@ -148,11 +151,104 @@ const handleForceRotate = async () => {
     }
   };
 
+  const togglePause = async () => {
+    const newStatus = settings.rotation_status === 'active' ? 'stopped' : 'active';
+    const updatedSettings = { ...settings, rotation_status: newStatus };
+
+    setSettings(updatedSettings);
+
+    try {
+      await api.post('/settings', updatedSettings);
+
+    } catch (e) {
+      setSettings((prev: any) => ({ ...prev, rotation_status: settings.rotation_status }));
+      setMsg({ open: true, type: 'error', text: 'Не удалось изменить статус' });
+    }
+  };
+
+  const formatDate = (isoString: string) => {
+    if (!isoString) return 'Нет данных';
+    return new Date(+isoString).toLocaleString('ru-RU', {
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+  };
+
+  const getNextRotationDate = () => {
+    if (settings.rotation_status === 'stopped') return 'Пауза';
+    if (!settings.last_rotation_timestamp) return 'Ожидание...';
+
+    const last = new Date(+settings.last_rotation_timestamp);
+    const intervalMinutes = parseInt(settings.rotation_interval) || 60;
+    const next = new Date(last.getTime() + intervalMinutes * 60000);
+
+    return next.toLocaleString('ru-RU', {
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+  };
+
+  const isPaused = settings.rotation_status === 'stopped';
+
   return (
     <Box>
       <Typography variant="h4" gutterBottom>Настройки утилиты</Typography>
 
       <Grid container spacing={3}>
+
+        <Grid size={{ xs: 12 }}>
+          <Grid container spacing={1}>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <Typography variant="subtitle2" color="textSecondary" gutterBottom>
+                Статус сервиса
+              </Typography>
+              {isPaused ?
+                <Chip icon={<PauseCircleFilled />} label="Остановлен" color="warning" size="small" variant="outlined" /> :
+                <Chip icon={<CheckCircle />} label="Активен" color="success" size="small" variant="outlined" />
+              }
+
+              <Tooltip title={isPaused ? "Возобновить ротацию" : "Поставить на паузу"}>
+                <IconButton
+                  onClick={togglePause}
+                  size="small"
+                  sx={{
+                    bgcolor: 'background.paper',
+                    boxShadow: 2,
+                    '&:hover': { bgcolor: 'background.paper' },
+                    ml: 1
+                  }}
+                >
+                  {isPaused ? <PlayCircleFilled fontSize="large" /> : <PauseCircleFilled fontSize="large" />}
+                </IconButton>
+              </Tooltip>
+            </Grid>
+            {/* Последняя генерация */}
+            <Grid size={{ xs: 12, md: 4 }}>
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <Box>
+                  <Typography variant="subtitle2" color="textSecondary">
+                    Последняя генерация
+                  </Typography>
+                  <Typography variant="body1" sx={{ fontWeight: 500, mt: 2 }}>
+                    {formatDate(settings.last_rotation_timestamp)}
+                  </Typography>
+                </Box>
+              </Stack>
+            </Grid>
+
+            {/* Следующая генерация */}
+            <Grid size={{ xs: 12, md: 4 }}>
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <Box>
+                  <Typography variant="subtitle2" color="textSecondary">
+                    Следующая генерация
+                  </Typography>
+                  <Typography variant="body1" sx={{ fontWeight: 500, mt: 2 }}>
+                    {getNextRotationDate()}
+                  </Typography>
+                </Box>
+              </Stack>
+            </Grid>
+          </Grid>
+        </Grid>
 
         <Grid size={{ xs: 12, md: 6 }}>
           <Paper sx={{ p: 3, height: '100%' }}>
