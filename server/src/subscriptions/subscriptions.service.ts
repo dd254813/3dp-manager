@@ -11,7 +11,6 @@ export class SubscriptionsService {
   constructor(
     @InjectRepository(Subscription)
     private subRepo: Repository<Subscription>,
-    @InjectRepository(Inbound)
     private xuiService: XuiService,
   ) {}
 

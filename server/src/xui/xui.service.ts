@@ -119,6 +119,29 @@ export class XuiService {
     }
   }
 
+  async checkConnection(url: string, username: string, pass: string): Promise<boolean> {
+    try {
+      const tempApi = axios.create({
+        baseURL: url,
+        timeout: 5000,
+        httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+        withCredentials: true
+      });
+
+      const res = await tempApi.post('/login', {
+        username: username,
+        password: pass,
+      });
+
+      if (res.headers['set-cookie'] && res.data?.success) {
+        return true;
+      }
+    } catch (e) {
+      this.logger.warn(`Ошибка авторизации: ${e.message}`);
+    }
+    return false;
+  }
+
   async getNewX25519Cert() {
     try {
       const res = await this.api.get('/panel/api/server/getNewX25519Cert');

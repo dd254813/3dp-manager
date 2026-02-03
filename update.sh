@@ -17,17 +17,10 @@ need_root() {
   [[ $EUID -eq 0 ]] || die "Запускать только от root"
 }
 
-if ! command -v curl >/dev/null 2>&1; then
-  echo "❌ curl не установлен. Установите curl и повторите попытку"
-  echo "   apt install -y curl"
-  exit 1
-fi
-
 #################################
 # CONFIG
 #################################
 PROJECT_DIR="/opt/3dp-manager"
-REPO_RAW="https://raw.githubusercontent.com/denpiligrim/3dp-manager/main"
 
 #################################
 # START
@@ -47,52 +40,20 @@ command -v docker >/dev/null 2>&1 || die "Docker не установлен"
 docker compose version >/dev/null 2>&1 || die "docker compose v2 недоступен"
 
 #################################
-# DOWNLOAD FILES
-#################################
-log "Загружаем обновлённые файлы из репозитория"
-
-mkdir -p app
-
-curl -fsSL "$REPO_RAW/app/Dockerfile"    -o app/Dockerfile
-curl -fsSL "$REPO_RAW/app/package.json"  -o app/package.json
-curl -fsSL "$REPO_RAW/app/index.js"      -o app/index.js
-curl -fsSL "$REPO_RAW/app/rotate.js"      -o app/rotate.js
-curl -fsSL "$REPO_RAW/app/builders/buildVlessRealityTcp.js" -o app/builders/buildVlessRealityTcp.js
-curl -fsSL "$REPO_RAW/app/builders/buildVlessRealityXhttp.js" -o app/builders/buildVlessRealityXhttp.js
-curl -fsSL "$REPO_RAW/app/builders/buildTrojanRealityTcp.js" -o app/builders/buildTrojanRealityTcp.js
-curl -fsSL "$REPO_RAW/app/builders/buildShadowsocksTcp.js" -o app/builders/buildShadowsocksTcp.js
-curl -fsSL "$REPO_RAW/app/builders/buildVmessTcp.js" -o app/builders/buildVmessTcp.js
-curl -fsSL "$REPO_RAW/app/builders/buildVlessRealityGrpc.js" -o app/builders/buildVlessRealityGrpc.js
-curl -fsSL "$REPO_RAW/app/builders/buildVlessWs.js" -o app/builders/buildVlessWs.js
-curl -fsSL "$REPO_RAW/app/builders/buildInboundLink.js" -o app/builders/buildInboundLink.js
-curl -fsSL "$REPO_RAW/whitelist.txt"     -o whitelist.txt
-
-log "Файлы обновлены"
-
-#################################
 # REBUILD BACKEND
 #################################
-log "Пересобираем backend"
-docker compose build node
-
-#################################
-# RESTART CONTAINERS
-#################################
-log "Перезапускаем контейнеры"
-docker compose up -d
-
-if [ -f "app/my_whitelist.txt" ]; then
-    log "✔ Копируем my_whitelist.txt в контейнер..."
-    docker cp app/my_whitelist.txt node:/app/my_whitelist.txt
+log "Скачивание последних версий Docker-образов..."
+if docker compose pull; then
+    log "Образы успешно загружены."
+else
+    error "Ошибка при скачивании образов. Проверьте подключение к интернету или доступность GitHub Container Registry."
 fi
 
-#################################
-# HEALTH CHECK
-#################################
-sleep 2
+log "Пересоздание контейнеров..."
+docker compose up -d
 
-docker compose ps | grep node >/dev/null || die "Backend не запущен"
-docker compose ps | grep nginx   >/dev/null || die "Nginx не запущен"
+log "Очистка старых Docker-образов (освобождение места)..."
+docker image prune -f
 
 #################################
 # DONE

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Box, TextField, Button, Typography, Paper, Snackbar, Alert, Grid, Divider, InputAdornment, Stack, Chip } from '@mui/material';
+import { Box, TextField, Button, Typography, Paper, Snackbar, Alert, Grid, Divider, InputAdornment, Stack, Chip, Tooltip, IconButton } from '@mui/material';
 import api from '../api';
+import { CheckCircle, PauseCircleFilled, PlayCircleFilled, Schedule, Update } from '@mui/icons-material';
 
 const ROTATION_PRESETS = [
   { label: 'Сутки', value: 1440 },
@@ -14,6 +15,8 @@ export default function SettingsPage() {
     xui_login: '',
     xui_password: '',
     rotation_interval: '30',
+    rotation_status: 'active',
+    last_rotation_timestamp: '',
   });
 
   const [adminProfile, setAdminProfile] = useState({
@@ -22,7 +25,8 @@ export default function SettingsPage() {
   });
 
   const [msg, setMsg] = useState({ open: false, type: 'success' as 'success' | 'error', text: '' });
-  const [intervalError, setIntervalError] = useState('');
+  const [intervalError, setIntervalError] = useState<string>('');
+  const [loadingRotate, setLoadingRotate] = useState<boolean>(false);
 
   useEffect(() => {
     loadSettings();
@@ -36,6 +40,42 @@ export default function SettingsPage() {
       setIntervalError('');
     }
   }, [settings.rotation_interval]);
+
+  const cleanData = () => {
+    const cleaned = { ...settings };
+
+    if (cleaned.xui_url) {
+      cleaned.xui_url = cleaned.xui_url.replace(/\/+$/, '');
+    }
+
+    if (cleaned.xui_login) cleaned.xui_login = cleaned.xui_login.trim();
+    if (cleaned.xui_password) cleaned.xui_password = cleaned.xui_password.trim();
+
+    setSettings(prev => ({ ...prev, ...cleaned }));
+
+    return cleaned;
+  };
+
+  const handleCheckConnection = async () => {
+    const data = cleanData(); // Сначала чистим
+
+    try {
+      setMsg({ open: true, type: 'success', text: 'Проверка...' });
+      const res = await api.post('/settings/check', {
+        xui_url: data.xui_url,
+        xui_login: data.xui_login,
+        xui_password: data.xui_password
+      });
+
+      if (res.data.success) {
+        setMsg({ open: true, type: 'success', text: 'Подключение успешно!' });
+      } else {
+        setMsg({ open: true, type: 'error', text: 'Ошибка: Неверные данные или нет доступа' });
+      }
+    } catch (e) {
+      setMsg({ open: true, type: 'error', text: 'Ошибка сети при проверке' });
+    }
+  };
 
   const loadSettings = async () => {
     try {
@@ -64,8 +104,10 @@ export default function SettingsPage() {
       return;
     }
 
+    const data = cleanData();
+
     try {
-      await api.post('/settings', settings);
+      await api.post('/settings', data);
       setMsg({ open: true, type: 'success', text: 'Настройки сохранены!' });
     } catch (e) {
       setMsg({ open: true, type: 'error', text: 'Ошибка сохранения' });
@@ -89,19 +131,124 @@ export default function SettingsPage() {
   const handleForceRotate = async () => {
     if (confirm('ВНИМАНИЕ: Это немедленно обновит конфиги в подписках.\n\nИнтервал автоматической ротации НЕ будет сброшен.\n\nПродолжить?')) {
       try {
-        await api.post('/rotation/rotate-all');
-        setMsg({ open: true, type: 'success', text: 'Ротация успешно выполнена!' });
+        setLoadingRotate(true);
+        const res = await api.post('/rotation/rotate-all');
+
+        setLoadingRotate(false);
+        if (res.data && res.data.success) {
+          setMsg({ open: true, type: 'success', text: res.data.message || 'Ротация успешно выполнена!' });
+        } else {
+          setMsg({
+            open: true,
+            type: 'error',
+            text: res.data?.message || 'Ошибка выполнения ротации'
+          });
+        }
       } catch (e) {
-        setMsg({ open: true, type: 'error', text: 'Ошибка при запуске ротации' });
+        setLoadingRotate(false);
+        setMsg({ open: true, type: 'error', text: 'Ошибка сети или сервера' });
       }
     }
   };
+
+  const togglePause = async () => {
+    const newStatus = settings.rotation_status === 'active' ? 'stopped' : 'active';
+    const updatedSettings = { ...settings, rotation_status: newStatus };
+
+    setSettings(updatedSettings);
+
+    try {
+      await api.post('/settings', updatedSettings);
+
+    } catch (e) {
+      setSettings((prev: any) => ({ ...prev, rotation_status: settings.rotation_status }));
+      setMsg({ open: true, type: 'error', text: 'Не удалось изменить статус' });
+    }
+  };
+
+  const formatDate = (isoString: string) => {
+    if (!isoString) return 'Нет данных';
+    return new Date(+isoString).toLocaleString('ru-RU', {
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+  };
+
+  const getNextRotationDate = () => {
+    if (settings.rotation_status === 'stopped') return 'Пауза';
+    if (!settings.last_rotation_timestamp) return 'Ожидание...';
+
+    const last = new Date(+settings.last_rotation_timestamp);
+    const intervalMinutes = parseInt(settings.rotation_interval) || 60;
+    const next = new Date(last.getTime() + intervalMinutes * 60000);
+
+    return next.toLocaleString('ru-RU', {
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+  };
+
+  const isPaused = settings.rotation_status === 'stopped';
 
   return (
     <Box>
       <Typography variant="h4" gutterBottom>Настройки утилиты</Typography>
 
       <Grid container spacing={3}>
+
+        <Grid size={{ xs: 12 }}>
+          <Grid container spacing={1}>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <Typography variant="subtitle2" color="textSecondary" gutterBottom>
+                Статус сервиса
+              </Typography>
+              {isPaused ?
+                <Chip icon={<PauseCircleFilled />} label="Остановлен" color="warning" size="small" variant="outlined" /> :
+                <Chip icon={<CheckCircle />} label="Активен" color="success" size="small" variant="outlined" />
+              }
+
+              <Tooltip title={isPaused ? "Возобновить ротацию" : "Поставить на паузу"}>
+                <IconButton
+                  onClick={togglePause}
+                  size="small"
+                  sx={{
+                    bgcolor: 'background.paper',
+                    boxShadow: 2,
+                    '&:hover': { bgcolor: 'background.paper' },
+                    ml: 1
+                  }}
+                >
+                  {isPaused ? <PlayCircleFilled fontSize="large" /> : <PauseCircleFilled fontSize="large" />}
+                </IconButton>
+              </Tooltip>
+            </Grid>
+            {/* Последняя генерация */}
+            <Grid size={{ xs: 12, md: 4 }}>
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <Box>
+                  <Typography variant="subtitle2" color="textSecondary">
+                    Последняя генерация
+                  </Typography>
+                  <Typography variant="body1" sx={{ fontWeight: 500, mt: 2 }}>
+                    {formatDate(settings.last_rotation_timestamp)}
+                  </Typography>
+                </Box>
+              </Stack>
+            </Grid>
+
+            {/* Следующая генерация */}
+            <Grid size={{ xs: 12, md: 4 }}>
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <Box>
+                  <Typography variant="subtitle2" color="textSecondary">
+                    Следующая генерация
+                  </Typography>
+                  <Typography variant="body1" sx={{ fontWeight: 500, mt: 2 }}>
+                    {getNextRotationDate()}
+                  </Typography>
+                </Box>
+              </Stack>
+            </Grid>
+          </Grid>
+        </Grid>
 
         <Grid size={{ xs: 12, md: 6 }}>
           <Paper sx={{ p: 3, height: '100%' }}>
@@ -111,7 +258,7 @@ export default function SettingsPage() {
             <TextField
               fullWidth margin="normal" label="URL панели"
               value={settings.xui_url} onChange={handleSettingChange('xui_url')}
-              helperText="Например: https://my-vpn.com:2053/panel_path"
+              helperText="Например: https://my-vpn.com:2053/wfgpoVHaOF"
             />
             <TextField
               fullWidth margin="normal" label="Логин 3x-ui"
@@ -125,6 +272,16 @@ export default function SettingsPage() {
             <Button variant="contained" sx={{ mt: 2 }} onClick={handleSaveSettings}>
               Сохранить подключение
             </Button>
+            {settings.xui_url && settings.xui_login && settings.xui_password && (
+              <Button
+                variant="outlined"
+                color="info"
+                sx={{ mt: 2, ml: 2 }}
+                onClick={handleCheckConnection}
+              >
+                Проверить
+              </Button>
+            )}
           </Paper>
         </Grid>
 
@@ -162,6 +319,7 @@ export default function SettingsPage() {
               </Button>
               <Button
                 variant="outlined"
+                loading={loadingRotate}
                 color="warning"
                 onClick={handleForceRotate}
                 sx={{ mt: 2, ml: 2 }}

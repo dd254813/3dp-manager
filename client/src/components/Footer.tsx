@@ -42,7 +42,7 @@ export default function Footer() {
 
               <IconButton
                 component="a"
-                href="https://github.com/denpiligrim"
+                href="https://github.com/denpiligrim/3dp-manager"
                 target="_blank"
                 aria-label="GitHub"
                 color="inherit"

@@ -4,18 +4,26 @@ import { Repository } from 'typeorm';
 import { Setting } from './entities/setting.entity';
 import * as dns from 'dns/promises';
 import { COUNTRIES } from './countries';
+import { XuiService } from 'src/xui/xui.service';
 
 @Controller('settings')
 export class SettingsController {
   constructor(
     @InjectRepository(Setting)
     private settingsRepo: Repository<Setting>,
+    private xuiService: XuiService
   ) {}
 
   @Get()
   async findAll() {
     const settings = await this.settingsRepo.find();
     return settings.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.value }), {});
+  }
+
+  @Post('check')
+  async checkConnection(@Body() body: { xui_url: string; xui_login: string; xui_password: string }) {
+    const success = await this.xuiService.checkConnection(body.xui_url, body.xui_login, body.xui_password);
+    return { success };
   }
 
   @Post()

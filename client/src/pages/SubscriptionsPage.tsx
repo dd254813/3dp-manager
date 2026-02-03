@@ -191,12 +191,18 @@ export default function SubscriptionsPage() {
         </Table>
       </Paper>
 
-      <Dialog open={open} onClose={() => setOpen(false)}>
+      <Dialog open={open} onClose={() => setOpen(false)} disableRestoreFocus>
         <DialogTitle>Новая подписка</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus margin="dense" label="Имя пользователя" fullWidth
             value={name} onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleCreate();
+              }
+            }}
           />
         </DialogContent>
         <DialogActions>
@@ -215,7 +221,7 @@ export default function SubscriptionsPage() {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => navigator.clipboard.writeText(currentLinks.join('\n'))}>Копировать всё</Button>
+          <Button onClick={() => navigator.clipboard.writeText(currentLinks.join('\n'))}>Копировать все</Button>
           <Button onClick={() => setLinksOpen(false)}>Закрыть</Button>
         </DialogActions>
       </Dialog>
