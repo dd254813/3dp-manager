@@ -4,7 +4,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { Setting } from '../settings/entities/setting.entity';
-import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class AuthService {
@@ -14,7 +13,6 @@ export class AuthService {
     @InjectRepository(Setting)
     private settingsRepo: Repository<Setting>,
     private jwtService: JwtService,
-    private configService: ConfigService,
   ) {}
 
   async validateUser(login: string, pass: string): Promise<any> {
@@ -87,14 +85,12 @@ export class AuthService {
     const login = await this.settingsRepo.findOne({ where: { key: 'admin_login' } });
     
     if (!login) {
-      this.logger.log('Инициализация администратора...');
-      const envLogin = this.configService.get<string>('ADMIN_LOGIN') || 'admin';
-      const envPass = this.configService.get<string>('ADMIN_PASSWORD') || 'admin';
+      this.logger.log('Инициализация администратора (admin / admin)...');
       
-      const loginSetting = this.settingsRepo.create({ key: 'admin_login', value: envLogin });
+      const loginSetting = this.settingsRepo.create({ key: 'admin_login', value: 'admin' });
       await this.settingsRepo.save(loginSetting);
 
-      const hash = await bcrypt.hash(envPass, 10);
+      const hash = await bcrypt.hash('admin', 10);
       const passSetting = this.settingsRepo.create({ key: 'admin_password', value: hash });
       await this.settingsRepo.save(passSetting);
       
