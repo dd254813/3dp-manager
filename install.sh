@@ -413,6 +413,17 @@ docker compose up --build -d
 log "Очистка кэша сборки..."
 docker image prune -f
 
+if LC_ALL=C ufw status 2>/dev/null | grep -q "Status: active"; then
+    echo "Найден активный UFW. Настраиваю правила..."
+
+    ufw allow 443/tcp
+    ufw allow 443/udp
+    ufw allow 8443/tcp
+    ufw allow 8443/udp
+    ufw allow 10000:60000/tcp
+    ufw allow 10000:60000/udp
+fi
+
 echo ""
 echo "==================================================="
 if [[ "$USE_SSL" == "true" ]]; then
@@ -420,8 +431,8 @@ if [[ "$USE_SSL" == "true" ]]; then
 else
     echo -e "${GREEN}✔ Установка завершена! Доступно по адресу: http://${UI_HOST}:${FINAL_PORT}${NC}"
 fi
-echo -e "${GREEN}Логин: $ADMIN_USER"
-echo -e "${GREEN}Пароль: $ADMIN_PASS"
+echo -e "${GREEN}Логин: ${ADMIN_USER}${NC}"
+echo -e "${GREEN}Пароль: ${ADMIN_PASS}${NC}"
 echo ""
 echo "Немедленно измените пароль в Настройках утилиты!"
 echo "==================================================="
