@@ -36,7 +36,7 @@ export class TunnelsService {
 
     if (!tunnel) throw new HttpException('Tunnel not found', HttpStatus.NOT_FOUND);
 
-    const hostSetting = await this.settingRepo.findOne({ where: { key: 'xui_host' } });
+    const hostSetting = await this.settingRepo.findOne({ where: { key: 'xui_ip' } });
     
     if (!hostSetting || !hostSetting.value) {
       throw new HttpException(
