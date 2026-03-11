@@ -7,9 +7,11 @@ import {
   Select,
   InputAdornment,
   MenuItem,
-  type SelectChangeEvent
+  type SelectChangeEvent,
+  useMediaQuery,
+  useTheme
 } from '@mui/material';
-import { Delete, Add, Link as LinkIcon, Refresh, OpenInNew, ContentCopy, Dns, Router } from '@mui/icons-material';
+import { Delete, Add, Link as LinkIcon, OpenInNew, ContentCopy, Dns, Router } from '@mui/icons-material';
 import api from '../api';
 
 interface Subscription {
@@ -59,6 +61,8 @@ export default function SubscriptionsPage() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   const [selectedServer, setSelectedServer] = useState<string | number>('main');
 
@@ -111,7 +115,7 @@ export default function SubscriptionsPage() {
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Подписки</Typography>
+        <Typography variant={isMobile ? 'h5' : 'h4'}>Подписки</Typography>
         {tunnels.length > 0 && (
           <FormControl variant='standard' size="small" sx={{ minWidth: 220, justifyContent: 'center' }}>
             <Select
@@ -141,7 +145,6 @@ export default function SubscriptionsPage() {
           </FormControl>
         )}
         <Box>
-          <Button startIcon={<Refresh />} onClick={loadSubs} sx={{ mr: 1 }}>Обновить</Button>
           <Button variant="contained" startIcon={<Add />} onClick={() => setOpen(true)}>Создать</Button>
         </Box>
       </Box>
@@ -189,6 +192,7 @@ export default function SubscriptionsPage() {
             ))}
           </TableBody>
         </Table>
+        {subs.length === 0 && <Typography sx={{ p: 2 }} color='textSecondary' textAlign='center'>Нет подписок</Typography>}
       </Paper>
 
       <Dialog open={open} onClose={() => setOpen(false)} disableRestoreFocus>

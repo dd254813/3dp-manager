@@ -1,7 +1,11 @@
 import { Box, Container, Grid, IconButton, Link, Stack } from '@mui/material';
 import { GitHub, YouTube, Telegram } from '@mui/icons-material';
 
-export default function Footer() {
+interface FooterProps {
+  isMobile?: boolean;
+}
+
+export default function Footer({ isMobile }: FooterProps) {
   return (
     <Box
       component="footer"
@@ -19,12 +23,12 @@ export default function Footer() {
         <Grid container spacing={4} justifyContent="space-between" alignItems="center">
 
           <Grid size={{ xs: 12, sm: 4 }}>
-            <Stack direction="row" alignItems="center" spacing={1}>
-              <img src="/img/logo.png" alt="Logo" width={32} height={32} style={{ marginRight: 14 }} />
+            <Stack direction="row" alignItems="center" spacing={1} justifyContent={isMobile ? 'center' : 'start'}>
+              <img src="/img/logo.png" alt="Logo" width={32} height={32} style={{ marginRight: isMobile ? 0 : 14 }} />
             </Stack>
           </Grid>
 
-          <Grid size={{ xs: 12, sm: 4 }} sx={{ textAlign: { xs: 'left', sm: 'center' } }}>
+          <Grid size={{ xs: 12, sm: 4 }} sx={{ textAlign: 'center' }}>
             <Link
               href="https://3dp-manager.com/docs/intro"
               target="_blank"
@@ -38,7 +42,7 @@ export default function Footer() {
           </Grid>
 
           <Grid size={{ xs: 12, sm: 4 }} sx={{ textAlign: { xs: 'left', sm: 'right' } }}>
-            <Stack direction="row" spacing={1} justifyContent={{ xs: 'flex-start', sm: 'flex-end' }}>
+            <Stack direction="row" spacing={1} justifyContent={{ xs: 'center', sm: 'flex-end' }}>
 
               <IconButton
                 component="a"

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Box, TextField, Button, Typography, Paper, Snackbar, Alert, Grid, Divider, InputAdornment, Stack, Chip, Tooltip, IconButton } from '@mui/material';
+import { Box, TextField, Button, Typography, Paper, Snackbar, Alert, Grid, Divider, InputAdornment, Stack, Chip, Tooltip, IconButton, useTheme, useMediaQuery } from '@mui/material';
 import api from '../api';
 import { CheckCircle, PauseCircleFilled, PlayCircleFilled, Schedule, Update } from '@mui/icons-material';
 
@@ -27,6 +27,8 @@ export default function SettingsPage() {
   const [msg, setMsg] = useState({ open: false, type: 'success' as 'success' | 'error', text: '' });
   const [intervalError, setIntervalError] = useState<string>('');
   const [loadingRotate, setLoadingRotate] = useState<boolean>(false);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   useEffect(() => {
     loadSettings();
@@ -190,7 +192,7 @@ export default function SettingsPage() {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Настройки утилиты</Typography>
+      <Typography variant={isMobile ? 'h5' : 'h4'} gutterBottom>Настройки утилиты</Typography>
 
       <Grid container spacing={3}>
 
@@ -276,7 +278,7 @@ export default function SettingsPage() {
               <Button
                 variant="outlined"
                 color="info"
-                sx={{ mt: 2, ml: 2 }}
+                sx={{ mt: 2, ml: isMobile ? 1 : 2 }}
                 onClick={handleCheckConnection}
               >
                 Проверить
@@ -322,7 +324,7 @@ export default function SettingsPage() {
                 loading={loadingRotate}
                 color="warning"
                 onClick={handleForceRotate}
-                sx={{ mt: 2, ml: 2 }}
+                sx={{ mt: 2, ml: isMobile ? 0 : 2 }}
               >
                 Сгенерировать сейчас
               </Button>

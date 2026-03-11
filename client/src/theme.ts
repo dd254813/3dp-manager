@@ -2,7 +2,7 @@ import type { PaletteMode } from '@mui/material';
 
 const lightPalette = {
   primary: {
-    main: '#2563eb',
+    main: '#1395de',
     light: '#60a5fa',
     dark: '#1e40af',
   },
@@ -21,7 +21,7 @@ const lightPalette = {
 
 const darkPalette = {
   primary: {
-    main: '#3b82f6',
+    main: '#1395de',
     light: '#60a5fa',
     dark: '#1d4ed8',
   },

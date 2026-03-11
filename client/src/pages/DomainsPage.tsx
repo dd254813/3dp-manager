@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, TextField, Button, Typography, List, ListItem, ListItemText, IconButton, Paper, TablePagination } from '@mui/material';
+import { Box, TextField, Button, Typography, List, ListItem, ListItemText, IconButton, Paper, TablePagination, useTheme, useMediaQuery } from '@mui/material';
 import { Delete, Add, UploadFile, Remove } from '@mui/icons-material';
 import api from '../api';
 
@@ -10,6 +10,8 @@ export default function DomainsPage() {
   const [newDomain, setNewDomain] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [totalCount, setTotalCount] = useState(0);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -52,12 +54,10 @@ export default function DomainsPage() {
 
   const handleDeleteAll = async () => {
     if (confirm('ВНИМАНИЕ! Вы действительно хотите удалить ВСЕ домены из белого списка?')) {
-      if (confirm('Это действие необратимо. Точно удалить?')) {
-        try {
-          await api.delete('/domains/all');
-          loadDomains();
-        } catch (_e) { alert('Ошибка удаления'); }
-      }
+      try {
+        await api.delete('/domains/all');
+        loadDomains();
+      } catch (_e) { alert('Ошибка удаления'); }
     }
   };
 
@@ -87,11 +87,11 @@ export default function DomainsPage() {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Белый список доменов (SNI)</Typography>
+      <Typography variant={isMobile ? 'h5' : 'h4'} gutterBottom>Белый список доменов (SNI)</Typography>
 
       <Paper sx={{ p: 2, display: 'flex', gap: 2 }}>
         <TextField
-          label="Добавить домен" size="small" fullWidth
+          label="Доменное имя" size="small" fullWidth
           value={newDomain} onChange={(e) => setNewDomain(e.target.value)}
         />
         <Button
@@ -124,10 +124,9 @@ export default function DomainsPage() {
             Удалить все
           </Button>
         </Box>
-
       )}
 
-      <Paper>
+      <Paper sx={{ mt: domains.length > 0 ? 0 : 3 }}>
         <List>
           {domains.map((d) => (
             <ListItem key={d.id} secondaryAction={
@@ -136,7 +135,7 @@ export default function DomainsPage() {
               <ListItemText primary={d.name} />
             </ListItem>
           ))}
-          {domains.length === 0 && <Typography sx={{ p: 2 }} color='textSecondary' textAlign='center'>Список пуст</Typography>}
+          {domains.length === 0 && <Typography sx={{ p: 2 }} color='textSecondary' textAlign='center'>Нет доменов</Typography>}
         </List>
         <TablePagination
           component="div"

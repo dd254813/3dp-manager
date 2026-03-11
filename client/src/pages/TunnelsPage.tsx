@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import {
   Box, Button, Typography, Paper, Table, TableBody, TableCell,
   TableHead, TableRow, IconButton, Dialog, DialogTitle,
-  DialogContent, TextField, DialogActions, Chip, CircularProgress
+  DialogContent, TextField, DialogActions, Chip, CircularProgress,
+  useTheme,
+  useMediaQuery
 } from '@mui/material';
 import { Delete, Add, Terminal, CheckCircle, Error, Dns } from '@mui/icons-material';
 import api from '../api';
@@ -20,6 +22,8 @@ export default function TunnelsPage() {
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
   const [open, setOpen] = useState(false);
   const [loadingId, setLoadingId] = useState<number | null>(null);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   const [form, setForm] = useState({
     name: '', ip: '', sshPort: 22, username: 'root', password: '', domain: ''
@@ -70,7 +74,7 @@ export default function TunnelsPage() {
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Relay серверы</Typography>
+        <Typography variant={isMobile ? 'h5' : 'h4'}>Relay серверы</Typography>
         <Button variant="contained" startIcon={<Add />} onClick={() => setOpen(true)}>Добавить</Button>
       </Box>
 
@@ -119,7 +123,7 @@ export default function TunnelsPage() {
                 </TableCell>
               </TableRow>
             ))}
-            {tunnels.length === 0 && <TableRow><TableCell colSpan={4} align="center">Список пуст</TableCell></TableRow>}
+            {tunnels.length === 0 && <TableRow><TableCell colSpan={4} align="center" sx={{ color: 'text.secondary' }}>Нет серверов</TableCell></TableRow>}
           </TableBody>
         </Table>
       </Paper>

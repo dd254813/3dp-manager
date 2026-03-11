@@ -10,8 +10,14 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useThemeContext } from '../ThemeContext';
 import { useAuth } from '../auth/AuthContext';
+import { Menu as MenuIcon } from '@mui/icons-material';
 
-export default function Header() {
+interface HeaderProps {
+  onMenuClick?: () => void;
+  isMobile?: boolean;
+}
+
+export default function Header({ onMenuClick, isMobile }: HeaderProps) {
   const { mode, toggleColorMode } = useThemeContext();
   const { logout } = useAuth();
   const navigate = useNavigate();
@@ -48,12 +54,17 @@ export default function Header() {
         sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}
       >
         <Toolbar>
+          {isMobile && (
+            <IconButton color="inherit" edge="start" onClick={onMenuClick} sx={{ mr: 1 }}>
+              <MenuIcon />
+            </IconButton>
+          )}
           <img src="/img/logo.png" alt="Logo" width={32} height={32} style={{ marginRight: 14 }} />
-          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1, fontWeight: 'bold', color: '#1395de' }}>
+          <Typography variant={isMobile ? 'body1' : 'h6'} noWrap component="div" sx={{ flexGrow: 1, fontWeight: 'bold', color: '#1395de' }}>
             3DP-MANAGER
           </Typography>
 
-          <Box sx={{ display: 'flex', gap: 1 }}>
+          <Box sx={{ display: 'flex', gap: isMobile ? 0.25 : 1 }}>
 
             <Tooltip title="Справка о программе">
               <IconButton color="inherit" onClick={() => setHelpOpen(true)}>

@@ -11,17 +11,17 @@
 **Поддержать проект**
 
 - Банковским переводом:
-	- Карта МИР: `2204320436318077`
-	- Карта MasterCard: `5395452209474530`
+	- :credit_card: Карта МИР: `2204320436318077`
+	- :credit_card: Карта MasterCard: `5395452209474530`
 - На электронный кошелек:
-	- ЮМоney: `4100116897060652`
-	- PayPal: `vasiljevdenisx@gmail.com`
+	- :moneybag: ЮМоney: `4100116897060652`
+	- :moneybag: PayPal: `vasiljevdenisx@gmail.com`
 - Криптовалютой:
-	- USDT | ETH (ERC20 | BEP20): `0x6fe140040f6Cdc1E1Ff2136cd1d60C0165809463`
-	- USDT | TRX (TRC20): `TEWxXmJxvkAmhshp7E61XJGHB3VyM9hNAb`
-	- Bitcoin: `bc1qctntwncsv2yn02x2vgnkrqm00c4h04c0afkgpl`
-	- TON: `UQCZ3MiwyYHXftPItMMzJRYRiKHugr16jFMq2nfOQOOoemLy`
-	- Bybit ID: `165292278`
+	- :coin: USDT | ETH (ERC20 | BEP20): `0x6fe140040f6Cdc1E1Ff2136cd1d60C0165809463`
+	- :coin: USDT | TRX (TRC20): `TEWxXmJxvkAmhshp7E61XJGHB3VyM9hNAb`
+	- :coin: Bitcoin: `bc1qctntwncsv2yn02x2vgnkrqm00c4h04c0afkgpl`
+	- :coin: TON: `UQCZ3MiwyYHXftPItMMzJRYRiKHugr16jFMq2nfOQOOoemLy`
+	- :coin: Bybit ID: `165292278`
 
 ## Описание
 
