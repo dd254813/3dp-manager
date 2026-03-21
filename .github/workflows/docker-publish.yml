@@ -2,7 +2,7 @@ name: Docker Build & Publish
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "dp-new-release" ]
   workflow_dispatch:
 
 env:

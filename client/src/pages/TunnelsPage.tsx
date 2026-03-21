@@ -4,7 +4,11 @@ import {
   TableHead, TableRow, IconButton, Dialog, DialogTitle,
   DialogContent, TextField, DialogActions, Chip, CircularProgress,
   useTheme,
-  useMediaQuery
+  useMediaQuery,
+  FormControl,
+  RadioGroup,
+  FormControlLabel,
+  Radio
 } from '@mui/material';
 import { Delete, Add, Terminal, CheckCircle, Error, Dns } from '@mui/icons-material';
 import api from '../api';
@@ -24,9 +28,10 @@ export default function TunnelsPage() {
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [authMethod, setAuthMethod] = useState<'password' | 'key'>('password');
 
   const [form, setForm] = useState({
-    name: '', ip: '', sshPort: 22, username: 'root', password: '', domain: ''
+    name: '', ip: '', sshPort: 22, username: 'root', password: '', privateKey: '', domain: ''
   });
 
   useEffect(() => { loadTunnels(); }, []);
@@ -39,9 +44,16 @@ export default function TunnelsPage() {
   };
 
   const handleCreate = async () => {
-    await api.post('/tunnels', form);
+    const payload = {
+      ...form,
+      password: authMethod === 'password' ? form.password : null,
+      privateKey: authMethod === 'key' ? form.privateKey : null,
+    };
+
+    await api.post('/tunnels', payload);
     setOpen(false);
-    setForm({ name: '', ip: '', sshPort: 22, username: 'root', password: '', domain: '' });
+    setForm({ name: '', ip: '', sshPort: 22, username: 'root', password: '', privateKey: '', domain: '' });
+    setAuthMethod('password');
     loadTunnels();
   };
 
@@ -149,7 +161,28 @@ export default function TunnelsPage() {
             <TextField margin="dense" label="SSH Порт" type="number" fullWidth value={form.sshPort} onChange={handleChange('sshPort')} />
             <TextField margin="dense" label="SSH User" fullWidth value={form.username} onChange={handleChange('username')} />
           </Box>
-          <TextField margin="dense" label="SSH Пароль" type="password" fullWidth value={form.password} onChange={handleChange('password')} />
+          <FormControl component="fieldset" sx={{ mt: 2, mb: 1 }}>
+            <RadioGroup row value={authMethod} onChange={(e) => setAuthMethod(e.target.value as 'password' | 'key')}>
+              <FormControlLabel value="password" control={<Radio />} label="По паролю" />
+              <FormControlLabel value="key" control={<Radio />} label="По SSH ключу" />
+            </RadioGroup>
+          </FormControl>
+
+          {authMethod === 'password' ? (
+            <TextField margin="dense" label="SSH Пароль" type="password" fullWidth value={form.password} onChange={handleChange('password')} />
+          ) : (
+            <TextField 
+              margin="dense" 
+              label="SSH Private Key (RSA / Ed25519)" 
+              multiline 
+              rows={4} 
+              fullWidth 
+              value={form.privateKey} 
+              onChange={handleChange('privateKey')} 
+              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
+              slotProps={{ input: { style: { fontFamily: 'monospace', fontSize: '0.875rem' } } }}
+            />
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpen(false)}>Отмена</Button>

@@ -102,12 +102,15 @@ export class RotationService implements OnModuleInit {
     return { success: true, message: 'Ротация успешно выполнена' };
   }
 
-  private async rotateSubscription(sub: Subscription, domains: Domain[]) {
+private async rotateSubscription(sub: Subscription, domains: Domain[]) {
     this.logger.log(`Ротация для подписки: ${sub.name} (${sub.uuid})`);
 
+    // Удаляем старые инбаунды
     if (sub.inbounds && sub.inbounds.length > 0) {
       for (const inbound of sub.inbounds) {
-        await this.xuiService.deleteInbound(inbound.xuiId);
+        if (inbound.xuiId && inbound.xuiId > 0) {
+          await this.xuiService.deleteInbound(inbound.xuiId);
+        }
         await this.inboundRepo.delete(inbound.id);
       }
     }
@@ -119,55 +122,105 @@ export class RotationService implements OnModuleInit {
     }
 
     const usedPorts = new Set<number>();
-
-    const tasks = [
-      () => this.inboundBuilder.buildVlessRealityTcp({ port: 0, uuid: uuidv4(), domain: this.pickDomain(domains), ...keys }),
-      () => this.inboundBuilder.buildVlessRealityXhttp({ port: 0, uuid: uuidv4(), domain: this.pickDomain(domains), ...keys }),
-      () => this.inboundBuilder.buildVlessRealityGrpc({ port: 0, uuid: uuidv4(), domain: this.pickDomain(domains), ...keys }),
-      () => this.inboundBuilder.buildVlessWs({ port: 0, uuid: uuidv4(), domain: this.pickDomain(domains) }),
-      () => this.inboundBuilder.buildVlessRealityTcp({ port: 0, uuid: uuidv4(), domain: this.pickDomain(domains), ...keys }),
-      () => this.inboundBuilder.buildVlessRealityTcp({ port: 0, uuid: uuidv4(), domain: this.pickDomain(domains), ...keys }),
-      () => this.inboundBuilder.buildVlessRealityTcp({ port: 0, uuid: uuidv4(), domain: this.pickDomain(domains), ...keys }),
-      () => this.inboundBuilder.buildVmessTcp({ port: 0, uuid: uuidv4() }),
-      () => this.inboundBuilder.buildShadowsocksTcp({ port: 0, uuid: uuidv4() }),
-      () => this.inboundBuilder.buildTrojanRealityTcp({ port: 0, uuid: uuidv4(), domain: this.pickDomain(domains), ...keys }),
-    ];
-
     const host = await this.settingRepo.findOne({ where: { key: 'xui_host' } });
     const serverAddress = host?.value || 'localhost';
     const flag = await this.settingRepo.findOne({ where: { key: 'xui_geo_flag' } });
     const flagEmoji = flag?.value ?? '%F0%9F%92%AF';
 
-    for (const [index, task] of tasks.entries()) {
-      let config = task();
+    // Получаем конфиг или пустой массив
+    const inboundsConfig = sub.inboundsConfig || [];
 
+    for (const config of inboundsConfig) {
+      const type = config.type;
+      const uuid = uuidv4();
+      
+      // Определяем SNI
+      let sni = 'unknown';
+      if (type !== 'custom' && type !== 'vmess-tcp' && type !== 'shadowsocks-tcp') {
+        sni = (!config.sni || config.sni === 'random') ? this.pickDomain(domains) : config.sni;
+      }
+
+      // === 1. Обработка Custom ===
+      if (type === 'custom') {
+        const newInbound = this.inboundRepo.create({
+          xuiId: 0, // Не привязано к 3x-ui
+          port: 0,
+          protocol: 'custom',
+          remark: 'custom-link',
+          link: config.link || '',
+          subscription: sub
+        });
+        await this.inboundRepo.save(newInbound);
+        continue;
+      }
+
+      // === 2. Обработка Hysteria2 ===
+      if (type === 'hysteria2-udp') {
+        const link = this.inboundBuilder.buildHysteria2Link(serverAddress, sni, 'Hysteria2');
+        const newInbound = this.inboundRepo.create({
+          xuiId: 0, 
+          port: 0, // Обычно Hysteria висит на 443, фактический порт вытаскивается в билдере
+          protocol: 'hysteria2',
+          remark: 'hysteria2-udp',
+          link: link,
+          subscription: sub
+        });
+        await this.inboundRepo.save(newInbound);
+        continue;
+      }
+
+      // === 3. Обработка стандартных инбаундов Xray (3x-ui) ===
+      
+      // Определяем порт
       let port = 0;
-      if (index === 0) port = await this.getFreePort(8443, usedPorts);
-      else if (index === 1) port = await this.getFreePort(443, usedPorts);
-      else port = await this.getFreePort(0, usedPorts);
-
-      config.port = port;
+      if (config.port === 'random' || !config.port) {
+        port = await this.getFreePort(0, usedPorts);
+      } else {
+        // Если передан конкретный порт строкой или числом
+        port = typeof config.port === 'string' ? parseInt(config.port, 10) : config.port;
+      }
       usedPorts.add(port);
 
-      const xuiId = await this.xuiService.addInbound(config);
+      let xuiConfig: any;
+
+      switch (type) {
+        case 'vless-tcp-reality':
+          xuiConfig = this.inboundBuilder.buildVlessRealityTcp({ port, uuid, sni, ...keys });
+          break;
+        case 'vless-xhttp-reality':
+          xuiConfig = this.inboundBuilder.buildVlessRealityXhttp({ port, uuid, sni, ...keys });
+          break;
+        case 'vless-grpc-reality':
+          xuiConfig = this.inboundBuilder.buildVlessRealityGrpc({ port, uuid, sni, ...keys });
+          break;
+        case 'vless-ws':
+          xuiConfig = this.inboundBuilder.buildVlessWs({ port, uuid, sni });
+          break;
+        case 'vmess-tcp':
+          xuiConfig = this.inboundBuilder.buildVmessTcp({ port, uuid });
+          break;
+        case 'shadowsocks-tcp':
+          xuiConfig = this.inboundBuilder.buildShadowsocksTcp({ port, uuid });
+          break;
+        case 'trojan-tcp-reality':
+          xuiConfig = this.inboundBuilder.buildTrojanRealityTcp({ port, uuid, sni, ...keys });
+          break;
+        default:
+          this.logger.warn(`Неизвестный тип инбаунда: ${type}`);
+          continue;
+      }
+
+      const xuiId = await this.xuiService.addInbound(xuiConfig);
 
       if (xuiId) {
-        const remarkParts = config.remark.split('-');
-        let domainForLink = 'unknown';
-        try {
-          const ss = JSON.parse(config.streamSettings || '{}');
-          if (ss.realitySettings?.serverNames?.[0]) domainForLink = ss.realitySettings.serverNames[0];
-          else if (ss.wsSettings?.headers?.Host) domainForLink = ss.wsSettings.headers.Host;
-          else if (ss.tcpSettings?.header?.request?.headers?.Host?.[0]) domainForLink = ss.tcpSettings.header.request.headers.Host[0];
-        } catch (e) { }
-        const idOrPass = config.settings ? JSON.parse(config.settings).clients?.[0]?.id || JSON.parse(config.settings).clients?.[0]?.password : "";
-        const fullLink = this.inboundBuilder.buildInboundLink(config, serverAddress, idOrPass, flagEmoji);
+        const idOrPass = xuiConfig.settings ? JSON.parse(xuiConfig.settings).clients?.[0]?.id || JSON.parse(xuiConfig.settings).clients?.[0]?.password : "";
+        const fullLink = this.inboundBuilder.buildInboundLink(xuiConfig, serverAddress, idOrPass, flagEmoji);
 
         const newInbound = this.inboundRepo.create({
           xuiId: xuiId,
           port: port,
-          protocol: config.protocol,
-          remark: config.remark,
+          protocol: xuiConfig.protocol,
+          remark: xuiConfig.remark,
           link: fullLink,
           subscription: sub
         });
@@ -175,6 +228,7 @@ export class RotationService implements OnModuleInit {
       }
     }
   }
+
   private pickDomain(list: Domain[]): string {
     return list[Math.floor(Math.random() * list.length)].name;
   }

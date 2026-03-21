@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Setting } from './entities/setting.entity';
+import * as net from 'net';
 import * as dns from 'dns/promises';
 import { COUNTRIES } from './countries';
 import { XuiService } from 'src/xui/xui.service';
@@ -32,8 +33,14 @@ export class SettingsController {
       try {
         const parsed = new URL(settings.xui_url);      
         settings['xui_host'] = parsed.hostname;
-        
-        const { address } = await dns.lookup(parsed.hostname);
+
+        let address = '';
+        if (net.isIP(parsed.hostname) === 0) {
+          const result = await dns.lookup(parsed.hostname);
+          address = result.address;
+        } else {
+          address = parsed.hostname;
+        }
           
         settings['xui_ip'] = address;
         console.log(`Extracted host: ${parsed.hostname} from ${settings.xui_url}`);

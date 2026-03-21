@@ -7,6 +7,7 @@ export const CONNECTION_TYPES = [
   'shadowsocks-tcp',
   'trojan-tcp-reality',
   'hysteria2-udp',
+  'custom',
 ] as const;
 
 export type ConnectionType = typeof CONNECTION_TYPES[number];

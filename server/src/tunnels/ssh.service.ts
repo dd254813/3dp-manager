@@ -6,7 +6,7 @@ export class SshService {
   private readonly logger = new Logger(SshService.name);
 
   async executeCommand(
-    config: { host: string; port: number; username: string; password?: string },
+    config: { host: string; port: number; username: string; password?: string, privateKey?: string },
     command: string
   ): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -42,6 +42,7 @@ export class SshService {
         port: config.port,
         username: config.username,
         password: config.password,
+        privateKey: config.privateKey,
         readyTimeout: 20000,
       });
     });

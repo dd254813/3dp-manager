@@ -11,6 +11,10 @@ export class InboundConfigDto {
   @IsString()
   @IsOptional()
   sni?: string | 'random';
+
+  @IsString()
+  @IsOptional()
+  link?: string;
 }
 
 export class CreateSubscriptionDto {

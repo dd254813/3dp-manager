@@ -18,6 +18,7 @@ interface Subscription {
   name: string;
   uuid: string;
   inbounds: any[];
+  inboundsConfig?: any[];
 }
 
 interface Tunnel {
@@ -33,6 +34,7 @@ interface InboundConfigUI {
   type: string;
   port: string;
   sni: string;
+  link?: string;
 }
 
 interface Domain { id: number; name: string; }
@@ -46,6 +48,7 @@ const CONNECTION_OPTIONS = [
   'vmess-tcp',
   'shadowsocks-tcp',
   'trojan-tcp-reality',
+  'custom',
 ];
 
 const patchLink = function (link: string, newHost: string): string {
@@ -124,16 +127,16 @@ export default function SubscriptionsPage() {
     setEditingId(null);
     setName('');
     setInbounds([
-      { id: generateId(), type: 'hysteria2-udp', port: 'random', sni: 'random' },
-      { id: generateId(), type: 'vless-xhttp-reality', port: 'random', sni: 'random' },
-      { id: generateId(), type: 'vless-tcp-reality', port: 'random', sni: 'random' },
-      { id: generateId(), type: 'vless-tcp-reality', port: 'random', sni: 'random' },
-      { id: generateId(), type: 'vless-tcp-reality', port: 'random', sni: 'random' },
-      { id: generateId(), type: 'vless-tcp-reality', port: 'random', sni: 'random' },
-      { id: generateId(), type: 'vless-grpc-reality', port: 'random', sni: 'random' },
-      { id: generateId(), type: 'vless-ws', port: 'random', sni: 'random' },
-      { id: generateId(), type: 'vmess-tcp', port: 'random', sni: 'random' },
-      { id: generateId(), type: 'shadowsocks-tcp', port: 'random', sni: 'random' },
+      { id: generateId(), type: 'hysteria2-udp', port: 'random', sni: 'random', link: '' },
+      { id: generateId(), type: 'vless-xhttp-reality', port: 'random', sni: 'random', link: '' },
+      { id: generateId(), type: 'vless-tcp-reality', port: 'random', sni: 'random', link: '' },
+      { id: generateId(), type: 'vless-tcp-reality', port: 'random', sni: 'random', link: '' },
+      { id: generateId(), type: 'vless-tcp-reality', port: 'random', sni: 'random', link: '' },
+      { id: generateId(), type: 'vless-tcp-reality', port: 'random', sni: 'random', link: '' },
+      { id: generateId(), type: 'vless-grpc-reality', port: 'random', sni: 'random', link: '' },
+      { id: generateId(), type: 'vless-ws', port: 'random', sni: 'random', link: '' },
+      { id: generateId(), type: 'vmess-tcp', port: 'random', sni: 'random', link: '' },
+      { id: generateId(), type: 'shadowsocks-tcp', port: 'random', sni: 'random', link: '' },
     ]);
     setPortErrors({});
     setOpen(true);
@@ -143,79 +146,58 @@ export default function SubscriptionsPage() {
     setEditingId(sub.id);
     setName(sub.name);
 
-    // Пытаемся маппить существующие инбаунды, или даем дефолтные
-    if (sub.inbounds && sub.inbounds.length > 0) {
-      setInbounds(sub.inbounds.map(i => ({
+    if (sub.inboundsConfig && sub.inboundsConfig.length > 0) {
+      setInbounds(sub.inboundsConfig.map(i => ({
         id: generateId(),
         type: i.type || 'vless-tcp-reality',
         port: i.port ? i.port.toString() : 'random',
-        sni: i.sni || 'random'
+        sni: i.sni || 'random',
+        link: i.link || ''
       })));
     } else {
-      setInbounds([{ id: generateId(), type: 'vless-tcp-reality', port: 'random', sni: 'random' }]);
+      setInbounds([{ id: generateId(), type: 'vless-tcp-reality', port: 'random', sni: 'random', link: '' }]);
     }
+
     setPortErrors({});
     setOpen(true);
   };
 
-  // Проверка порта
-  const handlePortCheck = async (portValue: string, id: string) => {
-    if (portValue === 'random' || portValue.trim() === '') {
-      setPortErrors(prev => { const n = { ...prev }; delete n[id]; return n; });
-      return;
-    }
-    const portNum = parseInt(portValue);
-    if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
-      setPortErrors(prev => ({ ...prev, [id]: 'Некорректный порт' }));
-      return;
-    }
-    try {
-      const { data } = await api.get(`/tunnels/check-port/${portNum}`);
-      if (!data.isFree) {
-        setPortErrors(prev => ({ ...prev, [id]: 'Порт занят' }));
-      } else {
-        setPortErrors(prev => { const n = { ...prev }; delete n[id]; return n; });
-      }
-    } catch (e) {
-      console.error('Ошибка проверки порта', e);
-    }
-  };
-
   const handleInboundChange = (id: string, field: keyof InboundConfigUI, value: string) => {
     setInbounds(prev => prev.map(inb => inb.id === id ? { ...inb, [field]: value } : inb));
-    if (field === 'port') {
+    if (field === 'port' || (field === 'type' && value === 'custom')) {
       setPortErrors(prev => { const n = { ...prev }; delete n[id]; return n; });
     }
   };
 
   const addInbound = () => {
     if (inbounds.length < 20) {
-      setInbounds([...inbounds, { id: generateId(), type: 'vless-tcp-reality', port: 'random', sni: 'random' }]);
+      setInbounds([...inbounds, { id: generateId(), type: 'vless-tcp-reality', port: 'random', sni: 'random', link: '' }]);
     }
   };
 
-const removeInbound = (id?: string) => {
-  if (id) {
-    if (inbounds.length > 1) {
-      setInbounds(inbounds.filter(inb => inb.id !== id));
-      setPortErrors(prev => { 
-        const n = { ...prev }; 
-        delete n[id]; 
-        return n; 
-      });
-    }
-  } else {
-    setInbounds([
-      {
-        id: crypto.randomUUID(),
-        type: 'vless-tcp-reality',
-        port: 'random',
-        sni: 'random'
+  const removeInbound = (id?: string) => {
+    if (id) {
+      if (inbounds.length > 1) {
+        setInbounds(inbounds.filter(inb => inb.id !== id));
+        setPortErrors(prev => {
+          const n = { ...prev };
+          delete n[id];
+          return n;
+        });
       }
-    ]);
-    setPortErrors({});
-  }
-};
+    } else {
+      setInbounds([
+        {
+          id: crypto.randomUUID(),
+          type: 'vless-tcp-reality',
+          port: 'random',
+          sni: 'random',
+          link: ''
+        }
+      ]);
+      setPortErrors({});
+    }
+  };
 
   const handleSave = async () => {
     if (Object.keys(portErrors).length > 0) {
@@ -229,11 +211,16 @@ const removeInbound = (id?: string) => {
 
     const payload = {
       name,
-      inboundsConfig: inbounds.map(i => ({
-        type: i.type,
-        port: i.port === 'random' ? 'random' : parseInt(i.port),
-        sni: i.sni
-      }))
+      inboundsConfig: inbounds.map(i => {
+        if (i.type === 'custom') {
+          return { type: i.type, link: i.link };
+        }
+        return {
+          type: i.type,
+          port: i.port === 'random' ? 'random' : parseInt(i.port),
+          sni: i.sni
+        };
+      })
     };
 
     try {
@@ -421,31 +408,46 @@ const removeInbound = (id?: string) => {
                 </Select>
               </FormControl>
 
-              <FormControl size="small" sx={{ minWidth: 150 }}>
-              <TextField
-                size="small"
-                label="Порт"
-                placeholder="random или порт"
-                value={inb.port}
-                onChange={(e) => handleInboundChange(inb.id, 'port', e.target.value)}
-                onBlur={(e) => handlePortCheck(e.target.value, inb.id)}
-                error={!!portErrors[inb.id]}
-                helperText={portErrors[inb.id] || ""}
-                sx={{ width: 140 }}
-              />
-              </FormControl>
+              {inb.type === 'custom' ? (
+                // Поле для кастомной ссылки
+                <FormControl size="small" sx={{ flexGrow: 1 }}>
+                  <TextField
+                    size="small"
+                    label="Ссылка на подключение"
+                    placeholder="vless://..."
+                    value={inb.link || ''}
+                    onChange={(e) => handleInboundChange(inb.id, 'link', e.target.value)}
+                    fullWidth
+                  />
+                </FormControl>
+              ) : (
+                <>
+                  <FormControl size="small" sx={{ minWidth: 150 }}>
+                    <TextField
+                      size="small"
+                      label="Порт"
+                      placeholder="random или порт"
+                      value={inb.port}
+                      onChange={(e) => handleInboundChange(inb.id, 'port', e.target.value)}
+                      error={!!portErrors[inb.id]}
+                      helperText={portErrors[inb.id] || ""}
+                      sx={{ width: 140 }}
+                    />
+                  </FormControl>
 
-              <FormControl size="small" sx={{ minWidth: 150 }}>
-                <InputLabel>SNI</InputLabel>
-                <Select
-                  value={inb.sni}
-                  label="SNI"
-                  onChange={(e) => handleInboundChange(inb.id, 'sni', e.target.value)}
-                >
-                  <MenuItem value="random">random</MenuItem>
-                  {domains.map(opt => <MenuItem key={opt.id} value={opt.name}>{opt.name}</MenuItem>)}
-                </Select>
-              </FormControl>
+                  <FormControl size="small" sx={{ minWidth: 150 }}>
+                    <InputLabel>SNI</InputLabel>
+                    <Select
+                      value={inb.sni}
+                      label="SNI"
+                      onChange={(e) => handleInboundChange(inb.id, 'sni', e.target.value)}
+                    >
+                      <MenuItem value="random">random</MenuItem>
+                      {domains.map(opt => <MenuItem key={opt.id} value={opt.name}>{opt.name}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                </>
+              )}
 
               <IconButton
                 color="primary"

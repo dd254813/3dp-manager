@@ -15,6 +15,9 @@ export class Subscription {
   @Column({ default: true })
   isEnabled: boolean;
 
+  @Column({ type: 'simple-json', nullable: true })
+  inboundsConfig: any[]; 
+
   @OneToMany(() => Inbound, (inbound) => inbound.subscription)
   inbounds: Inbound[];
 

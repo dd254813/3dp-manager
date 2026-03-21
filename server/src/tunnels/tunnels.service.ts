@@ -31,6 +31,7 @@ export class TunnelsService {
   async installScript(id: number) {
     const tunnel = await this.tunnelRepo.createQueryBuilder('tunnel')
       .addSelect('tunnel.password')
+      .addSelect('tunnel.privateKey')
       .where('tunnel.id = :id', { id })
       .getOne();
 
@@ -55,7 +56,8 @@ export class TunnelsService {
         host: tunnel.ip,
         port: tunnel.sshPort,
         username: tunnel.username,
-        password: tunnel.password
+        password: tunnel.password,
+        privateKey: tunnel.privateKey
       }, command);
 
       this.logger.log(`Скрипт выполнен успешно:\n${output}`);

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
+import * as fs from 'fs';
 
 @Injectable()
 export class InboundBuilderService {
@@ -139,8 +140,8 @@ export class InboundBuilderService {
     };
   }
 
-  buildVlessWs(params: { port: number; uuid: string; domain: string }) {
-    const { port, uuid, domain } = params;
+  buildVlessWs(params: { port: number; uuid: string; sni: string }) {
+    const { port, uuid, sni } = params;
     return {
       enable: true,
       port,
@@ -168,7 +169,7 @@ export class InboundBuilderService {
         security: "none",
         externalProxy: [],
         wsSettings: {
-          host: domain,
+          host: sni,
           path: "/",
           acceptProxyProtocol: false,
           heartbeatPeriod: 0,
@@ -477,5 +478,44 @@ export class InboundBuilderService {
       `&spx=${spx}` +
       `#${this.flag}%20${inbound.remark}`
     );
+  }
+
+  buildHysteria2Link(serverAddress: string, sni: string, remark: string): string {
+    let auth = 'YOUR_AUTH';
+    let obfs = 'salamander';
+    let obfsPass = 'YOUR_PASS';
+    let port = 443;
+
+    try {
+      const configPath = '/etc/hysteria/config.yaml';
+
+      if (fs.existsSync(configPath)) {
+        const fileContent = fs.readFileSync(configPath, 'utf8');
+
+        const authMatch = fileContent.match(/auth:\s*['"]?([^'"\n]+)['"]?/);
+        if (authMatch) auth = authMatch[1];
+
+        const obfsMatch = fileContent.match(/type:\s*['"]?(salamander)['"]?/);
+        if (obfsMatch) obfs = obfsMatch[1];
+
+        const passMatch = fileContent.match(/password:\s*['"]?([^'"\n]+)['"]?/);
+        if (passMatch) obfsPass = passMatch[1];
+
+        const listenMatch = fileContent.match(/listen:\s*['"]?:(\d+)['"]?/);
+        if (listenMatch) port = parseInt(listenMatch[1], 10);
+      } else {
+        console.warn(`Конфиг Hysteria2 не найден по пути: ${configPath}`);
+      }
+    } catch (e) {
+      console.error('Ошибка чтения конфига Hysteria2', e);
+    }
+
+    const params = new URLSearchParams();
+    params.set('insecure', '0');
+    params.set('sni', sni);
+    params.set('obfs', obfs);
+    params.set('obfs-password', obfsPass);
+
+    return `hy2://${auth}@${serverAddress}:${port}/?${params.toString()}#${this.flag}%20${encodeURIComponent(remark)}`;
   }
 }

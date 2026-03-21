@@ -17,8 +17,11 @@ export class Tunnel {
   @Column()
   username: string;
 
-  @Column({ select: false })
-  password: string;
+  @Column({ select: false, nullable: true })
+  password?: string;
+
+  @Column({ type: 'text', select: false, nullable: true })
+  privateKey?: string;
 
   @Column({ nullable: true })
   domain: string;
