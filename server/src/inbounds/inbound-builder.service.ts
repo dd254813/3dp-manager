@@ -516,6 +516,6 @@ export class InboundBuilderService {
     params.set('obfs', obfs);
     params.set('obfs-password', obfsPass);
 
-    return `hy2://${auth}@${serverAddress}:${port}/?${params.toString()}#${this.flag}%20${encodeURIComponent(remark)}`;
+    return `hy2://${auth}@${serverAddress}:${port}/?${params.toString()}#${remark}`;
   }
 }

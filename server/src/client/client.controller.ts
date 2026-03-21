@@ -267,7 +267,7 @@ export class ClientController {
       } catch (e) {
         return link;
       }
-    } else if (link.startsWith('vless://') || link.startsWith('trojan://')) {
+    } else if (link.startsWith('vless://') || link.startsWith('trojan://') || link.startsWith('hy2://')) {
       return link.replace(/@.*?:/, `@${newHost}:`);
     } else if (link.startsWith('ss://')) {
       if (link.includes('@')) {

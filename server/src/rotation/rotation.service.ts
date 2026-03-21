@@ -134,11 +134,7 @@ private async rotateSubscription(sub: Subscription, domains: Domain[]) {
       const type = config.type;
       const uuid = uuidv4();
       
-      // Определяем SNI
-      let sni = 'unknown';
-      if (type !== 'custom' && type !== 'vmess-tcp' && type !== 'shadowsocks-tcp') {
-        sni = (!config.sni || config.sni === 'random') ? this.pickDomain(domains) : config.sni;
-      }
+      let sni = '';
 
       // === 1. Обработка Custom ===
       if (type === 'custom') {
@@ -152,11 +148,13 @@ private async rotateSubscription(sub: Subscription, domains: Domain[]) {
         });
         await this.inboundRepo.save(newInbound);
         continue;
+      } else {
+        sni = config.sni === 'random' ? this.pickDomain(domains) : config.sni;
       }
 
       // === 2. Обработка Hysteria2 ===
       if (type === 'hysteria2-udp') {
-        const link = this.inboundBuilder.buildHysteria2Link(serverAddress, sni, 'Hysteria2');
+        const link = this.inboundBuilder.buildHysteria2Link(serverAddress, sni, flagEmoji + '%20hysteria2-udp');
         const newInbound = this.inboundRepo.create({
           xuiId: 0, 
           port: 0, // Обычно Hysteria висит на 443, фактический порт вытаскивается в билдере
