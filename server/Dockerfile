@@ -13,14 +13,18 @@ RUN npm run build
 FROM golang:1.23-alpine AS scanner-builder
 
 ARG REALITLSCANNER_REPO=https://github.com/XTLS/RealiTLScanner.git
-ARG REALITLSCANNER_REF=main
+# Pin to an immutable commit for reproducible builds (main as of 2026-03-25).
+ARG REALITLSCANNER_REF=4dbba8cb1d7c6be86b260dd45db7fd2a84d3293b
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 
 WORKDIR /src
 
 RUN apk add --no-cache git
-RUN git clone --depth 1 --branch ${REALITLSCANNER_REF} ${REALITLSCANNER_REPO} .
+RUN git init . \
+    && git remote add origin ${REALITLSCANNER_REPO} \
+    && git fetch --depth 1 origin ${REALITLSCANNER_REF} \
+    && git checkout --detach FETCH_HEAD
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/RealiTLScanner-linux-64 .
 
 FROM node:24-alpine

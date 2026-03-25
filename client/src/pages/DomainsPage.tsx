@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, TextField, Button, Typography, List, ListItem, ListItemText, IconButton, Paper, TablePagination, useTheme, useMediaQuery, Alert, Stack, CircularProgress, Divider, Link as MuiLink, Accordion, AccordionSummary, AccordionDetails } from '@mui/material';
-import { Delete, Add, UploadFile, Remove, ExpandMore } from '@mui/icons-material';
+import { Delete, Add, UploadFile, Remove, ExpandMore, Download } from '@mui/icons-material';
 import api from '../api';
 
 interface Domain { id: number; name: string; }
@@ -47,6 +47,66 @@ export default function DomainsPage() {
   const [scanPanelExpanded, setScanPanelExpanded] = useState(false);
   const [scanStateHydrated, setScanStateHydrated] = useState(false);
 
+  const isLoopbackHost = (value: string) => {
+    const host = value.trim().toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  };
+
+  const collectAddrCandidatesFromSettings = (settings: any) => {
+    const candidates: string[] = [];
+    const xuiIp = String(settings?.xui_ip || '').trim();
+    const xuiHost = String(settings?.xui_host || '').trim();
+    const xuiUrl = String(settings?.xui_url || '').trim();
+
+    if (xuiIp) candidates.push(xuiIp);
+    if (xuiHost) candidates.push(xuiHost);
+
+    if (xuiUrl) {
+      try {
+        const parsed = new URL(xuiUrl);
+        if (parsed.hostname) {
+          candidates.push(parsed.hostname.trim());
+        }
+      } catch (_e) {
+        // Ignore malformed URL from settings and fall back to runtime hostname.
+      }
+    }
+
+    return candidates.filter(Boolean);
+  };
+
+  const resolveSuggestedScanAddr = async (opts?: { allowLoopbackFallback?: boolean }) => {
+    const allowLoopbackFallback = Boolean(opts?.allowLoopbackFallback);
+    let settingsCandidates: string[] = [];
+
+    try {
+      const settingsRes = await api.get('/settings');
+      settingsCandidates = collectAddrCandidatesFromSettings(settingsRes.data);
+      const publicFromSettings = settingsCandidates.find((c) => !isLoopbackHost(c));
+      if (publicFromSettings) {
+        return publicFromSettings;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    // Fallback: panel host where user opened 3dp (often the target VPS in real usage).
+    const runtimeHost = window.location.hostname;
+    if (runtimeHost && !isLoopbackHost(runtimeHost)) {
+      return runtimeHost;
+    }
+
+    // Optional fallback for explicit reset action: prefer some known address
+    // over keeping stale user input in the field.
+    if (allowLoopbackFallback) {
+      const anyFromSettings = settingsCandidates[0];
+      if (anyFromSettings) return anyFromSettings;
+      if (runtimeHost) return runtimeHost;
+    }
+
+    return '';
+  };
+
   const loadDomains = async () => {
     try {
       const { data } = await api.get(`/domains?page=${page + 1}&limit=${rowsPerPage}`);
@@ -72,9 +132,9 @@ export default function DomainsPage() {
       }
 
       try {
-        const settingsRes = await api.get('/settings');
-        const defaultAddr = settingsRes.data?.xui_ip || settingsRes.data?.xui_host || '';
+        const defaultAddr = await resolveSuggestedScanAddr();
         if (defaultAddr) {
+          // Do not overwrite manually saved value from localStorage.
           setScanAddr((prev) => (prev.trim() ? prev : defaultAddr));
         }
       } catch (e) {
@@ -86,6 +146,7 @@ export default function DomainsPage() {
   }, []);
 
   useEffect(() => {
+    // Hydrate scanner UI state once so users do not lose pre-import review list after reload.
     try {
       const raw = localStorage.getItem(SCAN_STORAGE_KEY);
       if (!raw) return;
@@ -118,6 +179,7 @@ export default function DomainsPage() {
     if (!scanStateHydrated) return;
 
     try {
+      // Persist scanner input + results + accordion state for continuation after F5.
       localStorage.setItem(
         SCAN_STORAGE_KEY,
         JSON.stringify({
@@ -234,35 +296,76 @@ export default function DomainsPage() {
     setScanCandidates((prev) => prev.filter((d) => d !== domain));
   };
 
-  const handleClearScannedDomains = () => {
+  const handleClearScannedDomains = async () => {
     setScanCandidates([]);
     setScanResult(null);
+    setScanAddr('');
+
+    const suggestedAddr = await resolveSuggestedScanAddr({ allowLoopbackFallback: true });
+    setScanAddr(suggestedAddr);
+  };
+
+  const downloadDomainsAsTxt = (filename: string, domainNames: string[]) => {
+    const content = `${domainNames.join('\n')}\n`;
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const getExportTimestamp = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+
+  const handleExportScannedDomains = () => {
+    if (scanCandidates.length === 0) return;
+    downloadDomainsAsTxt(`sni-scanned-${getExportTimestamp()}.txt`, scanCandidates);
+  };
+
+  const handleExportMainDomains = async () => {
+    if (domains.length === 0) return;
+
+    try {
+      const { data } = await api.get('/domains/all');
+      const names = (Array.isArray(data) ? data : [])
+        .map((d: Domain) => d.name)
+        .filter(Boolean);
+
+      if (names.length === 0) return;
+      downloadDomainsAsTxt(`sni-whitelist-${getExportTimestamp()}.txt`, names);
+    } catch (_e) {
+      alert('Ошибка экспорта списка');
+    }
   };
 
   return (
     <Box>
       <Typography variant={isMobile ? 'h5' : 'h4'} gutterBottom>Белый список доменов (SNI)</Typography>
 
-      <Paper sx={{ mb: 2 }}>
-        <Accordion
-          expanded={scanPanelExpanded}
-          onChange={(_event, expanded) => setScanPanelExpanded(expanded)}
-          disableGutters
-          sx={{
-            boxShadow: 'none',
-            '&:before': { display: 'none' },
-          }}
-        >
-          <AccordionSummary expandIcon={<ExpandMore />}>
-            <Typography variant='h6'>Автопоиск SNI (backend scanner)</Typography>
-          </AccordionSummary>
-          <AccordionDetails sx={{ px: 2, pb: 2 }}>
+      {scanCapabilities?.scannerAvailable && (
+        <Paper sx={{ mb: 2 }}>
+          <Accordion
+            expanded={scanPanelExpanded}
+            onChange={(_event, expanded) => setScanPanelExpanded(expanded)}
+            disableGutters
+            sx={{
+              boxShadow: 'none',
+              '&:before': { display: 'none' },
+            }}
+          >
+            <AccordionSummary expandIcon={<ExpandMore />}>
+              <Typography variant='h6'>Автопоиск SNI (backend scanner)</Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={{ px: 2, pb: 2 }}>
 
-        {scanCapabilities && (!scanCapabilities.scannerAvailable || !scanCapabilities.timeoutAvailable) && (
-          <Alert severity='warning' sx={{ mb: 2 }}>
-            Сканер в контейнере недоступен. scanner: {String(scanCapabilities.scannerAvailable)}, timeout: {String(scanCapabilities.timeoutAvailable)}
-          </Alert>
-        )}
+          {scanCapabilities && (!scanCapabilities.scannerAvailable || !scanCapabilities.timeoutAvailable) && (
+            <Alert severity='warning' sx={{ mb: 2 }}>
+              Сканер в контейнере недоступен. scanner: {String(scanCapabilities.scannerAvailable)}, timeout: {String(scanCapabilities.timeoutAvailable)}
+            </Alert>
+          )}
 
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
           <TextField
@@ -289,7 +392,7 @@ export default function DomainsPage() {
             sx={{ minWidth: 120 }}
           />
           <TextField
-            label='Таймаут'
+            label='Таймаут, сек'
             type='number'
             value={scanTimeout}
             onChange={(e) => setScanTimeout(Number(e.target.value))}
@@ -309,6 +412,16 @@ export default function DomainsPage() {
           >
             Добавить найденные в список
           </Button>
+          {scanCandidates.length > 0 && (
+            <Button
+              variant='outlined'
+              startIcon={<Download />}
+              onClick={handleExportScannedDomains}
+              disabled={isScanning}
+            >
+              Экспорт найденных
+            </Button>
+          )}
           <Button
             variant='text'
             color='error'
@@ -322,15 +435,25 @@ export default function DomainsPage() {
 
         {scanError && <Alert severity='error' sx={{ mt: 2 }}>{scanError}</Alert>}
 
-        {scanResult && (
-          <Box sx={{ mt: 2 }}>
+          {scanResult && (
+            <Box sx={{ mt: 2 }}>
             <Divider sx={{ mb: 2 }} />
             <Typography variant='body2' sx={{ mb: 1 }}>
-              Найдено: <b>{scanResult.foundCount}</b>. К отбору: <b>{scanCandidates.length}</b>. Код выхода: <b>{scanResult.exitCode}</b>. Таймаут: <b>{String(scanResult.timedOut)}</b>
+              Найдено доменов: <b>{scanResult.foundCount}</b>. В предварительном списке: <b>{scanCandidates.length}</b>.
             </Typography>
-            <Alert severity='info' sx={{ mb: 1 }}>
-              Можно открыть домен в новом окне, проверить вручную и удалить из предварительного списка перед импортом.
-            </Alert>
+            <Typography
+              variant='body2'
+              color={scanResult.timedOut ? 'info.main' : 'success.main'}
+              sx={{ mb: 1 }}
+            >
+              {scanResult.timedOut
+                ? `Скан остановлен по лимиту времени (${scanResult.scanSeconds} сек) - это нормальный режим поиска.`
+                : 'Скан завершен успешно.'}
+              {' '}<Box component='span' sx={{ color: 'text.secondary' }}>(код: {scanResult.exitCode})</Box>
+            </Typography>
+            <Typography variant='body2' color='text.secondary' sx={{ mb: 1 }}>
+              Проверяйте домены кликом и удаляйте лишние перед импортом.
+            </Typography>
             <Paper variant='outlined' sx={{ maxHeight: 220, overflow: 'auto' }}>
               <List dense>
                 {scanCandidates.map((d) => (
@@ -365,80 +488,113 @@ export default function DomainsPage() {
                 )}
               </List>
             </Paper>
-          </Box>
-        )}
-          </AccordionDetails>
-        </Accordion>
-      </Paper>
-
-      <Paper sx={{ p: 2, display: 'flex', gap: 2 }}>
-        <TextField
-          label="Доменное имя" size="small" fullWidth
-          value={newDomain} onChange={(e) => setNewDomain(e.target.value)}
-        />
-        {isMobile ? (
-          <>
-            <IconButton edge="end" onClick={() => fileInputRef.current?.click()}><UploadFile /></IconButton>
-            <IconButton edge="end" onClick={handleAdd}><Add /></IconButton>
-          </>
-        ) : (
-          <>
-            <Button
-              variant="outlined"
-              startIcon={<UploadFile />}
-              sx={{ width: isMobile ? 'auto' : '170px' }}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {isMobile ? '' : 'Из файла'}
-            </Button>
-            <Button variant="contained" sx={{ width: '160px' }} startIcon={<Add />} onClick={handleAdd}>Добавить</Button>
-          </>
-        )}
-        <input
-          type="file"
-          accept=".txt"
-          ref={fileInputRef}
-          style={{ display: 'none' }}
-          onChange={handleFileUpload}
-        />
-      </Paper>
-
-      {domains.length > 0 && (
-        <Box sx={{ display: 'flex', justifyContent: 'end', width: '100%' }}>
-          <Button
-            variant="text"
-            color="error"
-            size='small'
-            startIcon={<Remove />}
-            onClick={handleDeleteAll}
-          >
-            Удалить все
-          </Button>
-        </Box>
+            </Box>
+          )}
+            </AccordionDetails>
+          </Accordion>
+        </Paper>
       )}
 
-      <Paper sx={{ mt: domains.length > 0 ? 0 : 3 }}>
-        <List>
-          {domains.map((d) => (
-            <ListItem key={d.id} secondaryAction={
-              <IconButton edge="end" onClick={() => handleDelete(d.id)}><Delete /></IconButton>
-            }>
-              <ListItemText primary={d.name} />
-            </ListItem>
-          ))}
-          {domains.length === 0 && <Typography sx={{ p: 2 }} color='textSecondary' textAlign='center'>Нет доменов</Typography>}
-        </List>
-        <TablePagination
-          component="div"
-          count={totalCount}
-          page={page}
-          onPageChange={handleChangePage}
-          rowsPerPage={rowsPerPage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
-          rowsPerPageOptions={[10, 25, 50, 100]}
-          labelRowsPerPage="Доменов на странице:"
-          labelDisplayedRows={({ from, to, count }) => `${from}–${to} из ${count !== -1 ? count : `более ${to}`}`}
-        />
+      <Paper sx={{ p: 2 }}>
+        <Typography variant='h6' gutterBottom>
+          Управление белым списком (SNI)
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+          <TextField
+            label="Доменное имя"
+            size="small"
+            value={newDomain}
+            onChange={(e) => setNewDomain(e.target.value)}
+            sx={{ flex: '1 1 280px' }}
+          />
+          {isMobile ? (
+            <>
+              <IconButton edge="end" onClick={() => fileInputRef.current?.click()}><UploadFile /></IconButton>
+              <IconButton edge="end" onClick={handleAdd}><Add /></IconButton>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="outlined"
+                startIcon={<UploadFile />}
+                sx={{ width: '170px' }}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Из файла
+              </Button>
+              <Button variant="contained" sx={{ width: '160px' }} startIcon={<Add />} onClick={handleAdd}>Добавить</Button>
+            </>
+          )}
+          <input
+            type="file"
+            accept=".txt"
+            ref={fileInputRef}
+            style={{ display: 'none' }}
+            onChange={handleFileUpload}
+          />
+        </Box>
+
+        {domains.length > 0 && (
+          <Box sx={{ display: 'flex', justifyContent: 'end', width: '100%', mt: 1, gap: 1, flexWrap: 'wrap' }}>
+            <Button
+              variant="outlined"
+              size='small'
+              startIcon={<Download />}
+              onClick={handleExportMainDomains}
+            >
+              Экспорт списка
+            </Button>
+            <Button
+              variant="text"
+              color="error"
+              size='small'
+              startIcon={<Remove />}
+              onClick={handleDeleteAll}
+            >
+              Удалить все
+            </Button>
+          </Box>
+        )}
+
+        <Paper variant='outlined' sx={{ mt: 1 }}>
+          <List>
+            {domains.map((d) => (
+              <ListItem
+                key={d.id}
+                sx={{
+                  borderRadius: 1,
+                  transition: 'background-color 120ms ease',
+                  '&:hover': {
+                    backgroundColor: 'action.hover',
+                  },
+                }}
+                secondaryAction={
+                  <IconButton edge="end" onClick={() => handleDelete(d.id)}><Delete /></IconButton>
+                }
+              >
+                <ListItemText
+                  primary={
+                    <MuiLink href={`https://${d.name}`} target='_blank' rel='noopener noreferrer' underline='hover'>
+                      {d.name}
+                    </MuiLink>
+                  }
+                />
+              </ListItem>
+            ))}
+            {domains.length === 0 && <Typography sx={{ p: 2 }} color='textSecondary' textAlign='center'>Нет доменов</Typography>}
+          </List>
+          <TablePagination
+            component="div"
+            count={totalCount}
+            page={page}
+            onPageChange={handleChangePage}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={handleChangeRowsPerPage}
+            rowsPerPageOptions={[10, 25, 50, 100]}
+            labelRowsPerPage="Доменов на странице:"
+            labelDisplayedRows={({ from, to, count }) => `${from}–${to} из ${count !== -1 ? count : `более ${to}`}`}
+          />
+        </Paper>
       </Paper>
     </Box>
   );
