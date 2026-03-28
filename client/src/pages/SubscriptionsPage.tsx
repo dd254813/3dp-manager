@@ -8,9 +8,10 @@ import {
   useMediaQuery,
   Menu,
   ListItemIcon,
-  ListItemText
+  ListItemText,
+  Checkbox
 } from '@mui/material';
-import { Delete, Add, Link as LinkIcon, OpenInNew, ContentCopy, Dns, Router, Edit, MoreVert, Remove } from '@mui/icons-material';
+import { Delete, Add, Link as LinkIcon, OpenInNew, ContentCopy, Dns, Router, Edit, MoreVert, Remove, Refresh } from '@mui/icons-material';
 import api from '../api';
 import { Logger } from '../utils/logger';
 
@@ -20,6 +21,7 @@ interface Subscription {
   uuid: string;
   inbounds: unknown[];
   inboundsConfig?: unknown[];
+  isAutoRotationEnabled?: boolean;
 }
 
 interface Tunnel {
@@ -279,6 +281,48 @@ export default function SubscriptionsPage() {
     });
   };
 
+  const handleToggleAutoRotation = async (subscriptionId: string, enabled: boolean) => {
+    try {
+      await api.put('/subscriptions/bulk-auto-rotation', {
+        subscriptionIds: [subscriptionId],
+        enabled
+      });
+      setSubs(prev => prev.map(s =>
+        s.id === subscriptionId ? { ...s, isAutoRotationEnabled: enabled } : s
+      ));
+      setSnackbar({
+        open: true,
+        type: 'success',
+        message: enabled ? 'Авторотация включена' : 'Авторотация выключена'
+      });
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Ошибка обновления';
+      Logger.error(`Toggle auto-rotation error: ${message}`, 'Subs');
+      setSnackbar({ open: true, type: 'error', message });
+      loadSubs();
+    }
+  };
+
+  const handleManualRotate = async (sub: Subscription) => {
+    setConfirmDialog({
+      open: true,
+      title: `Обновить подписку "${sub.name}" сейчас?`,
+      onConfirm: async () => {
+        try {
+          Logger.debug(`Starting manual rotation for subscription: ${sub.id}`, 'Subs');
+          const res = await api.post(`/rotation/rotate-one/${sub.id}`);
+          Logger.debug('Manual rotation completed', 'Subs');
+          setSnackbar({ open: true, type: 'success', message: res.data.message || 'Ротация выполнена' });
+          loadSubs();
+        } catch (error: unknown) {
+          const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Ошибка ротации';
+          Logger.error(`Manual rotation error: ${message}`, 'Subs');
+          setSnackbar({ open: true, type: 'error', message });
+        }
+      }
+    });
+  };
+
   const showLinks = (sub: Subscription) => {
     let links: string[] = [];
     if (selectedServer === 'main') {
@@ -334,6 +378,7 @@ export default function SubscriptionsPage() {
               <TableCell>Имя</TableCell>
               <TableCell>UUID</TableCell>
               <TableCell>Инбаунды</TableCell>
+              <TableCell>Авторотация</TableCell>
               <TableCell align="right">Действия</TableCell>
             </TableRow>
           </TableHead>
@@ -343,6 +388,13 @@ export default function SubscriptionsPage() {
                 <TableCell sx={{ fontWeight: 700 }}>{sub.name}</TableCell>
                 <TableCell sx={{ fontFamily: 'monospace' }}>{sub.uuid}</TableCell>
                 <TableCell>{sub.inbounds?.length || 0}</TableCell>
+                <TableCell>
+                  <Checkbox
+                    checked={sub.isAutoRotationEnabled ?? true}
+                    onChange={(e) => handleToggleAutoRotation(sub.id, e.target.checked)}
+                    color="primary"
+                  />
+                </TableCell>
                 <TableCell align="right">
                   {!isMobile && (
                     <>
@@ -399,6 +451,12 @@ export default function SubscriptionsPage() {
           <MenuItem onClick={() => showLinks(activeSub)}>
             <ListItemIcon><LinkIcon fontSize="small" /></ListItemIcon>
             <ListItemText>Показать конфиги</ListItemText>
+          </MenuItem>
+        )}
+        {activeSub && (
+          <MenuItem onClick={() => handleManualRotate(activeSub)}>
+            <ListItemIcon><Refresh fontSize="small" color="primary" /></ListItemIcon>
+            <ListItemText>Обновить сейчас</ListItemText>
           </MenuItem>
         )}
         {activeSub && (

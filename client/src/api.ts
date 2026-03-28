@@ -2,7 +2,7 @@ import axios from 'axios';
 import { Logger } from './utils/logger';
 
 const api = axios.create({
-  baseURL: `${location.protocol}//${location.hostname}:${location.port}/api`,
+  baseURL: '/api',
 });
 
 // Interceptor для добавления токена к каждому запросу

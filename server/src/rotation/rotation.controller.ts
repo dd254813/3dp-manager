@@ -1,4 +1,4 @@
-import { Controller, Post } from '@nestjs/common';
+import { Controller, Post, Param } from '@nestjs/common';
 import { RotationService } from './rotation.service';
 
 @Controller('rotation')
@@ -8,5 +8,10 @@ export class RotationController {
   @Post('rotate-all')
   async rotateAll() {
     return this.rotationService.performRotation();
+  }
+
+  @Post('rotate-one/:id')
+  async rotateSingle(@Param('id') id: string) {
+    return this.rotationService.rotateSingleSubscription(id);
   }
 }

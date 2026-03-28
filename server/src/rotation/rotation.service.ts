@@ -134,7 +134,10 @@ export class RotationService implements OnModuleInit {
     }
 
     const subscriptions = await this.subRepo.find({
-      where: { isEnabled: true },
+      where: {
+        isEnabled: true,
+        isAutoRotationEnabled: true,
+      },
       relations: ['inbounds'],
     });
     if (subscriptions.length === 0) {
@@ -343,5 +346,42 @@ export class RotationService implements OnModuleInit {
       const exists = await this.inboundRepo.findOne({ where: { port: p } });
       if (!exists) return p;
     }
+  }
+
+  /**
+   * Ручная ротация одной подписки (независимо от флага isAutoRotationEnabled)
+   */
+  async rotateSingleSubscription(subscriptionId: string) {
+    this.logger.debug(`Запуск ручной ротации подписки: ${subscriptionId}`);
+
+    const sub = await this.subRepo.findOne({
+      where: { id: subscriptionId },
+      relations: ['inbounds'],
+    });
+
+    if (!sub) {
+      this.logger.warn(`Подписка не найдена: ${subscriptionId}`);
+      return {
+        success: false,
+        message: 'Подписка не найдена',
+      };
+    }
+
+    const isLoginSuccess = await this.xuiService.login();
+    if (!isLoginSuccess) {
+      this.logger.error('Отмена ротации: Не удалось войти в панель 3x-ui');
+      return { success: false, message: 'Не удалось войти в панель 3x-ui' };
+    }
+
+    const domains = await this.domainRepo.find({ where: { isEnabled: true } });
+    if (domains.length === 0) {
+      this.logger.warn('Список доменов пуст! Ротация невозможна.');
+      return { success: false, message: 'Список доменов пуст!' };
+    }
+
+    await this.rotateSubscription(sub, domains);
+
+    this.logger.debug(`Ручная ротация подписки ${subscriptionId} завершена.`);
+    return { success: true, message: 'Ротация успешно выполнена' };
   }
 }

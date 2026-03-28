@@ -3,6 +3,7 @@ import {
   IsArray,
   ValidateNested,
   IsOptional,
+  IsBoolean,
   ArrayMinSize,
   ArrayMaxSize,
 } from 'class-validator';
@@ -35,4 +36,8 @@ export class CreateSubscriptionDto {
   @ArrayMaxSize(20)
   @IsOptional()
   inboundsConfig?: InboundConfigDto[];
+
+  @IsBoolean()
+  @IsOptional()
+  isAutoRotationEnabled?: boolean;
 }

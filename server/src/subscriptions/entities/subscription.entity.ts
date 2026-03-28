@@ -22,6 +22,9 @@ export class Subscription {
   @Column({ default: true })
   isEnabled: boolean;
 
+  @Column({ default: true })
+  isAutoRotationEnabled: boolean;
+
   @Column({ type: 'simple-json', nullable: true })
   inboundsConfig: Array<{
     type?: string;

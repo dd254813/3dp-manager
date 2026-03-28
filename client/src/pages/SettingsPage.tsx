@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Box, TextField, Button, Typography, Paper, Snackbar, Alert, Grid, Divider, InputAdornment, Stack, Chip, Tooltip, IconButton, useTheme, useMediaQuery, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
+import { Box, TextField, Button, Typography, Paper, Snackbar, Alert, Grid, Divider, InputAdornment, Stack, Chip, Tooltip, IconButton, useTheme, useMediaQuery, Dialog, DialogTitle, DialogContent, DialogActions, List, ListItem, FormControlLabel, Checkbox } from '@mui/material';
 import api from '../api';
-import { CheckCircle, PauseCircleFilled, PlayCircleFilled } from '@mui/icons-material';
+import { CheckCircle, PauseCircleFilled, PlayCircleFilled, Refresh } from '@mui/icons-material';
 import { Logger } from '../utils/logger';
 
 const ROTATION_PRESETS = [
@@ -9,6 +9,13 @@ const ROTATION_PRESETS = [
   { label: '3 дня', value: 4320 },
   { label: 'Неделя', value: 10080 },
 ];
+
+interface Subscription {
+  id: string;
+  name: string;
+  uuid: string;
+  isAutoRotationEnabled?: boolean;
+}
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState({
@@ -24,6 +31,8 @@ export default function SettingsPage() {
     login: '',
     password: '',
   });
+
+  const [subs, setSubs] = useState<Subscription[]>([]);
 
   const [msg, setMsg] = useState({ open: false, type: 'success' as 'success' | 'error', text: '' });
   const [loadingRotate, setLoadingRotate] = useState<boolean>(false);
@@ -51,9 +60,21 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const loadSubscriptions = useCallback(async () => {
+    try {
+      Logger.debug('Loading subscriptions...', 'Settings');
+      const { data } = await api.get('/subscriptions');
+      setSubs(data);
+      Logger.debug(`Loaded ${data.length} subscriptions`, 'Settings');
+    } catch (error) {
+      Logger.error('Failed to load subscriptions', 'Settings', error);
+    }
+  }, []);
+
   useEffect(() => {
     loadSettings();
-  }, [loadSettings]);
+    loadSubscriptions();
+  }, [loadSettings, loadSubscriptions]);
 
   const getIntervalError = () => {
     const val = parseInt(settings.rotation_interval, 10);
@@ -219,6 +240,63 @@ export default function SettingsPage() {
         }
       }
     });
+  };
+
+  const handleToggleAutoRotation = async (subscriptionId: string, enabled: boolean) => {
+    try {
+      await api.put('/subscriptions/bulk-auto-rotation', {
+        subscriptionIds: [subscriptionId],
+        enabled
+      });
+      setSubs(prev => prev.map(s =>
+        s.id === subscriptionId ? { ...s, isAutoRotationEnabled: enabled } : s
+      ));
+      setMsg({
+        open: true,
+        type: 'success',
+        text: enabled ? 'Авторотация включена' : 'Авторотация выключена'
+      });
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Ошибка обновления';
+      Logger.error(`Toggle auto-rotation error: ${message}`, 'Settings');
+      setMsg({ open: true, type: 'error', text: message });
+      loadSubscriptions();
+    }
+  };
+
+  const handleManualRotate = async (sub: Subscription) => {
+    setConfirmDialog({
+      open: true,
+      title: `Обновить подписку "${sub.name}" сейчас?`,
+      onConfirm: async () => {
+        try {
+          Logger.debug(`Starting manual rotation for subscription: ${sub.id}`, 'Settings');
+          const res = await api.post(`/rotation/rotate-one/${sub.id}`);
+          Logger.debug('Manual rotation completed', 'Settings');
+          setMsg({ open: true, type: 'success', text: res.data.message || 'Ротация выполнена' });
+          loadSubscriptions();
+        } catch (error: unknown) {
+          const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Ошибка ротации';
+          Logger.error(`Manual rotation error: ${message}`, 'Settings');
+          setMsg({ open: true, type: 'error', text: message });
+        }
+      }
+    });
+  };
+
+  const handleBulkUpdate = async (enabled: boolean) => {
+    try {
+      const { data } = await api.put('/subscriptions/bulk-auto-rotation', {
+        subscriptionIds: subs.map(s => s.id),
+        enabled
+      });
+      setMsg({ open: true, type: 'success', text: data.message || 'Настройки обновлены' });
+      loadSubscriptions();
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Ошибка обновления';
+      Logger.error(`Bulk update error: ${message}`, 'Settings');
+      setMsg({ open: true, type: 'error', text: message });
+    }
   };
 
   const togglePause = async () => {
@@ -398,6 +476,82 @@ export default function SettingsPage() {
               >
                 Сгенерировать сейчас
               </Button>
+
+              <Divider sx={{ my: 3 }} />
+
+              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
+                Управление авторотацией подписок
+              </Typography>
+              <Typography variant="body2" color="textSecondary" paragraph>
+                Выберите подписки для автоматической ротации:
+              </Typography>
+
+              {subs.length === 0 ? (
+                <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+                  Нет активных подписок
+                </Typography>
+              ) : (
+                <List sx={{ maxHeight: 400, overflow: 'auto', bgcolor: 'background.default', borderRadius: 1 }}>
+                  {subs.map(sub => (
+                    <ListItem
+                      key={sub.id}
+                      sx={{
+                        py: 1,
+                        borderBottom: '1px solid',
+                        borderColor: 'divider',
+                        '&:last-child': { borderBottom: 'none' }
+                      }}
+                    >
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={sub.isAutoRotationEnabled ?? true}
+                            onChange={(e) => handleToggleAutoRotation(sub.id, e.target.checked)}
+                            color="primary"
+                          />
+                        }
+                        label={
+                          <Box>
+                            <Typography variant="body2" sx={{ fontWeight: 500 }}>{sub.name}</Typography>
+                            <Typography variant="caption" color="textSecondary">
+                              {sub.uuid.substring(0, 8)}...
+                            </Typography>
+                          </Box>
+                        }
+                        sx={{ flexGrow: 1 }}
+                      />
+                      <Tooltip title="Обновить подписку вручную">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleManualRotate(sub)}
+                          color="primary"
+                        >
+                          <Refresh />
+                        </IconButton>
+                      </Tooltip>
+                    </ListItem>
+                  ))}
+                </List>
+              )}
+
+              {subs.length > 0 && (
+                <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => handleBulkUpdate(true)}
+                  >
+                    Включить для всех
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => handleBulkUpdate(false)}
+                  >
+                    Выключить для всех
+                  </Button>
+                </Box>
+              )}
             </Paper>
 
             <Paper sx={{ p: 3 }}>
