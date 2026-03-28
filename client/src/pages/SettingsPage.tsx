@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { Box, TextField, Button, Typography, Paper, Snackbar, Alert, Grid, Divider, InputAdornment, Stack, Chip, Tooltip, IconButton, useTheme, useMediaQuery } from '@mui/material';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Box, TextField, Button, Typography, Paper, Snackbar, Alert, Grid, Divider, InputAdornment, Stack, Chip, Tooltip, IconButton, useTheme, useMediaQuery, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
 import api from '../api';
-import { CheckCircle, PauseCircleFilled, PlayCircleFilled, Schedule, Update } from '@mui/icons-material';
+import { CheckCircle, PauseCircleFilled, PlayCircleFilled } from '@mui/icons-material';
+import { Logger } from '../utils/logger';
 
 const ROTATION_PRESETS = [
   { label: 'Сутки', value: 1440 },
@@ -25,23 +26,42 @@ export default function SettingsPage() {
   });
 
   const [msg, setMsg] = useState({ open: false, type: 'success' as 'success' | 'error', text: '' });
-  const [intervalError, setIntervalError] = useState<string>('');
   const [loadingRotate, setLoadingRotate] = useState<boolean>(false);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', onConfirm: () => {} });
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-  useEffect(() => {
-    loadSettings();
+  const loadSettings = useCallback(async () => {
+    try {
+      Logger.debug('Loading settings...', 'Settings');
+      const { data } = await api.get('/settings');
+      Logger.debug('Settings API response', 'Settings', data);
+      setSettings((prev) => ({ ...prev, ...data }));
+      Logger.debug('Settings after update', 'Settings', {
+        rotation_interval: data.rotation_interval,
+        prev_interval: prev => prev.rotation_interval
+      });
+
+      if (data.admin_login) {
+        setAdminProfile((prev) => ({ ...prev, login: data.admin_login }));
+      }
+      Logger.debug('Settings loaded successfully', 'Settings');
+    } catch (error) {
+      Logger.error('Failed to load', 'Settings', error);
+    }
   }, []);
 
   useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
+
+  const getIntervalError = () => {
     const val = parseInt(settings.rotation_interval, 10);
     if (isNaN(val) || val < 10) {
-      setIntervalError('Минимальный интервал — 10 минут');
-    } else {
-      setIntervalError('');
+      return 'Минимальный интервал — 10 минут';
     }
-  }, [settings.rotation_interval]);
+    return '';
+  };
 
   const cleanData = () => {
     const cleaned = { ...settings };
@@ -59,9 +79,10 @@ export default function SettingsPage() {
   };
 
   const handleCheckConnection = async () => {
-    const data = cleanData(); // Сначала чистим
+    const data = cleanData();
 
     try {
+      Logger.debug(`Checking connection to: ${data.xui_url}`, 'Settings');
       setMsg({ open: true, type: 'success', text: 'Проверка...' });
       const res = await api.post('/settings/check', {
         xui_url: data.xui_url,
@@ -70,38 +91,46 @@ export default function SettingsPage() {
       });
 
       if (res.data.success) {
-        setMsg({ open: true, type: 'success', text: 'Подключение успешно!' });
+        Logger.debug('Connection check: SUCCESS', 'Settings');
+        setMsg({
+          open: true,
+          type: 'success',
+          text: 'Подключение успешно!'
+        });
       } else {
-        setMsg({ open: true, type: 'error', text: 'Ошибка: Неверные данные или нет доступа' });
+        Logger.warn('Connection check: FAILED', 'Settings', res.data);
+        setMsg({
+          open: true,
+          type: 'error',
+          text: 'Ошибка: Неверные данные или нет доступа'
+        });
       }
-    } catch (e) {
+    } catch (error) {
+      Logger.error('Connection check error', 'Settings', error);
       setMsg({ open: true, type: 'error', text: 'Ошибка сети при проверке' });
     }
   };
 
-  const loadSettings = async () => {
-    try {
-      const { data } = await api.get('/settings');
-      setSettings((prev) => ({ ...prev, ...data }));
-
-      if (data.admin_login) {
-        setAdminProfile((prev) => ({ ...prev, login: data.admin_login }));
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleSettingChange = (prop: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSettings({ ...settings, [prop]: event.target.value });
-  };
+  const handleSettingChange = useCallback((prop: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSettings(prev => ({ ...prev, [prop]: event.target.value }));
+  }, []);
 
   const handlePresetClick = (minutes: number) => {
     setSettings(prev => ({ ...prev, rotation_interval: minutes.toString() }));
   };
 
   const handleSaveSettings = async () => {
-    if (intervalError) {
+    // Валидация полей подключения к 3x-ui
+    if (!settings.xui_url || !settings.xui_login || !settings.xui_password) {
+      setMsg({
+        open: true,
+        text: 'Заполните все поля подключения к 3x-ui (URL, логин, пароль)',
+        type: 'error'
+      });
+      return;
+    }
+
+    if (getIntervalError()) {
       setMsg({ open: true, text: 'Исправьте ошибки перед сохранением', type: 'error' });
       return;
     }
@@ -109,61 +138,102 @@ export default function SettingsPage() {
     const data = cleanData();
 
     try {
+      Logger.debug('Saving settings', 'Settings', {
+        xui_url: data.xui_url ? '***' : 'empty',
+        xui_login: data.xui_login,
+        rotation_interval: data.rotation_interval
+      });
       await api.post('/settings', data);
+      Logger.debug('Settings saved successfully', 'Settings');
       setMsg({ open: true, type: 'success', text: 'Настройки сохранены!' });
-    } catch (e) {
+    } catch (error) {
+      Logger.error('Save error', 'Settings', error);
       setMsg({ open: true, type: 'error', text: 'Ошибка сохранения' });
     }
   };
 
-  const handleAdminChange = (prop: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
-    setAdminProfile({ ...adminProfile, [prop]: event.target.value });
+  const handleSaveInterval = async () => {
+    if (getIntervalError()) {
+      setMsg({ open: true, text: 'Неверный интервал (минимум 10 минут)', type: 'error' });
+      return;
+    }
+
+    try {
+      Logger.debug('Saving rotation interval', 'Settings', {
+        rotation_interval: settings.rotation_interval
+      });
+      await api.post('/settings', {
+        rotation_interval: settings.rotation_interval
+      });
+      Logger.debug('Rotation interval saved successfully', 'Settings');
+      setMsg({ open: true, type: 'success', text: 'Интервал генерации применён!' });
+    } catch (error) {
+      Logger.error('Save interval error', 'Settings', error);
+      setMsg({ open: true, type: 'error', text: 'Ошибка сохранения интервала' });
+    }
   };
+
+  const handleAdminChange = useCallback((prop: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
+    setAdminProfile(prev => ({ ...prev, [prop]: event.target.value }));
+  }, []);
 
   const handleSaveAdmin = async () => {
     try {
+      Logger.debug('Updating admin profile', 'Settings', { login: adminProfile.login });
       await api.post('/auth/update-profile', adminProfile);
+      Logger.debug('Admin profile updated', 'Settings');
       setMsg({ open: true, type: 'success', text: 'Профиль администратора обновлен!' });
       setAdminProfile(prev => ({ ...prev, password: '' }));
-    } catch (e) {
+    } catch (error) {
+      Logger.error('Update admin profile error', 'Settings', error);
       setMsg({ open: true, type: 'error', text: 'Ошибка обновления профиля' });
     }
   };
 
   const handleForceRotate = async () => {
-    if (confirm('ВНИМАНИЕ: Это немедленно обновит конфиги в подписках.\n\nИнтервал автоматической ротации НЕ будет сброшен.\n\nПродолжить?')) {
-      try {
-        setLoadingRotate(true);
-        const res = await api.post('/rotation/rotate-all');
+    setConfirmDialog({
+      open: true,
+      title: 'ВНИМАНИЕ: Это немедленно обновит конфиги в подписках.\n\nИнтервал автоматической ротации НЕ будет сброшен.\n\nПродолжить?',
+      onConfirm: async () => {
+        try {
+          Logger.debug('Starting forced rotation', 'Rotation');
+          setLoadingRotate(true);
+          const res = await api.post('/rotation/rotate-all');
 
-        setLoadingRotate(false);
-        if (res.data && res.data.success) {
-          setMsg({ open: true, type: 'success', text: res.data.message || 'Ротация успешно выполнена!' });
-        } else {
-          setMsg({
-            open: true,
-            type: 'error',
-            text: res.data?.message || 'Ошибка выполнения ротации'
-          });
+          setLoadingRotate(false);
+          if (res.data && res.data.success) {
+            Logger.debug('Rotation completed successfully', 'Rotation');
+            setMsg({ open: true, type: 'success', text: res.data.message || 'Ротация успешно выполнена!' });
+          } else {
+            Logger.warn('Rotation completed with issues', 'Rotation', res.data?.message);
+            setMsg({
+              open: true,
+              type: 'error',
+              text: res.data?.message || 'Ошибка выполнения ротации'
+            });
+          }
+        } catch (error) {
+          setLoadingRotate(false);
+          Logger.error('Rotation error', 'Rotation', error);
+          setMsg({ open: true, type: 'error', text: 'Ошибка сети или сервера' });
         }
-      } catch (e) {
-        setLoadingRotate(false);
-        setMsg({ open: true, type: 'error', text: 'Ошибка сети или сервера' });
       }
-    }
+    });
   };
 
   const togglePause = async () => {
     const newStatus = settings.rotation_status === 'active' ? 'stopped' : 'active';
     const updatedSettings = { ...settings, rotation_status: newStatus };
 
+    Logger.debug(`Toggling rotation status: ${settings.rotation_status} → ${newStatus}`, 'Settings');
     setSettings(updatedSettings);
 
     try {
       await api.post('/settings', updatedSettings);
-
-    } catch (e) {
-      setSettings((prev: any) => ({ ...prev, rotation_status: settings.rotation_status }));
+      Logger.debug('Rotation status updated', 'Settings');
+    } catch (error) {
+      Logger.error('Toggle pause error', 'Settings', error);
+      setSettings((prev) => ({ ...prev, rotation_status: prev.rotation_status }));
       setMsg({ open: true, type: 'error', text: 'Не удалось изменить статус' });
     }
   };
@@ -316,7 +386,7 @@ export default function SettingsPage() {
                   />
                 ))}
               </Stack>
-              <Button variant="contained" sx={{ mt: 2 }} onClick={handleSaveSettings}>
+              <Button variant="contained" sx={{ mt: 2 }} onClick={handleSaveInterval}>
                 Применить интервал
               </Button>
               <Button
@@ -357,6 +427,28 @@ export default function SettingsPage() {
       <Snackbar open={msg.open} autoHideDuration={5000} onClose={() => setMsg({ ...msg, open: false })}>
         <Alert severity={msg.type}>{msg.text}</Alert>
       </Snackbar>
+
+      <Dialog open={confirmDialog.open} onClose={() => setConfirmDialog({ ...confirmDialog, open: false })}>
+        <DialogTitle>Подтверждение действия</DialogTitle>
+        <DialogContent>
+          <Typography>{confirmDialog.title}</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDialog({ ...confirmDialog, open: false })}>
+            Отмена
+          </Button>
+          <Button
+            onClick={() => {
+              setConfirmDialog({ ...confirmDialog, open: false });
+              confirmDialog.onConfirm();
+            }}
+            variant="contained"
+            color="warning"
+          >
+            Продолжить
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

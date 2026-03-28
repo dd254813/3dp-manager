@@ -15,7 +15,10 @@ export class SubscriptionsService {
   ) {}
 
   findAll() {
-    return this.subRepo.find({ relations: ['inbounds'], order: { createdAt: 'DESC' } });
+    return this.subRepo.find({
+      relations: ['inbounds'],
+      order: { createdAt: 'DESC' },
+    });
   }
 
   async create(dto: CreateSubscriptionDto) {
@@ -24,14 +27,14 @@ export class SubscriptionsService {
       uuid: uuidv4(),
       inboundsConfig: dto.inboundsConfig || [],
     });
-    
+
     return this.subRepo.save(sub);
   }
 
   async update(id: string, dto: CreateSubscriptionDto) {
-    const sub = await this.subRepo.findOne({ 
-      where: { id }, 
-      relations: ['inbounds'] 
+    const sub = await this.subRepo.findOne({
+      where: { id },
+      relations: ['inbounds'],
     });
 
     if (!sub) {
@@ -39,7 +42,7 @@ export class SubscriptionsService {
     }
 
     sub.name = dto.name;
-    
+
     if (dto.inboundsConfig) {
       sub.inboundsConfig = dto.inboundsConfig;
     }
@@ -48,7 +51,10 @@ export class SubscriptionsService {
   }
 
   async remove(id: string) {
-    const sub = await this.subRepo.findOne({ where: { id }, relations: ['inbounds'] });
+    const sub = await this.subRepo.findOne({
+      where: { id },
+      relations: ['inbounds'],
+    });
     if (!sub) return;
 
     if (sub.inbounds && sub.inbounds.length > 0) {

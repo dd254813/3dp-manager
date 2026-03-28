@@ -29,8 +29,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:-secretKey}
       ADMIN_LOGIN: ${ADMIN_LOGIN:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      PORT: ${PORT:-3000}
+      LOG_LEVEL: ${LOG_LEVEL:-error}
     ports:
-    - "3000:3000"
+      - "${PORT:-3000}:${PORT:-3000}"
     networks:
       - app-network
 

@@ -17,11 +17,18 @@ export class AuthService {
     private configService: ConfigService,
   ) {}
 
-  async validateUser(login: string, pass: string): Promise<any> {
-    this.logger.log(`Попытка входа с логином: ${login}`);
+  async validateUser(
+    login: string,
+    pass: string,
+  ): Promise<{ login: string } | null> {
+    this.logger.debug(`Попытка входа с логином: ${login}`);
 
-    const dbLogin = await this.settingsRepo.findOne({ where: { key: 'admin_login' } });
-    const dbPass = await this.settingsRepo.findOne({ where: { key: 'admin_password' } });
+    const dbLogin = await this.settingsRepo.findOne({
+      where: { key: 'admin_login' },
+    });
+    const dbPass = await this.settingsRepo.findOne({
+      where: { key: 'admin_password' },
+    });
 
     if (!dbLogin) {
       this.logger.error('Пользователь admin_login не найден в базе данных!');
@@ -33,12 +40,12 @@ export class AuthService {
       return null;
     }
 
-    this.logger.log(`Пользователь найден, проверяем хеш пароля...`);
-    
+    this.logger.debug(`Пользователь найден, проверяем хеш пароля...`);
+
     const isMatch = await bcrypt.compare(pass, dbPass.value);
-    
+
     if (isMatch) {
-      this.logger.log('Пароль верный!');
+      this.logger.debug('Пароль верный!');
       return { login: dbLogin.value };
     } else {
       this.logger.warn('Пароль неверный.');
@@ -46,7 +53,7 @@ export class AuthService {
     }
   }
 
-  async login(user: any) {
+  login(user: { login: string }) {
     const payload = { username: user.login };
     return {
       access_token: this.jwtService.sign(payload),
@@ -55,52 +62,69 @@ export class AuthService {
 
   async changePassword(newPass: string) {
     const hash = await bcrypt.hash(newPass, 10);
-    let setting = await this.settingsRepo.findOne({ where: { key: 'admin_password' } });
+    let setting = await this.settingsRepo.findOne({
+      where: { key: 'admin_password' },
+    });
     if (!setting) {
       setting = this.settingsRepo.create({ key: 'admin_password' });
     }
     setting.value = hash;
     await this.settingsRepo.save(setting);
-    this.logger.log('Пароль администратора изменен.');
+    this.logger.debug('Пароль администратора изменен.');
   }
 
   async updateAdminProfile(login: string, password?: string) {
-    let loginSetting = await this.settingsRepo.findOne({ where: { key: 'admin_login' } });
-    if (!loginSetting) loginSetting = this.settingsRepo.create({ key: 'admin_login' });
-    
+    let loginSetting = await this.settingsRepo.findOne({
+      where: { key: 'admin_login' },
+    });
+    if (!loginSetting)
+      loginSetting = this.settingsRepo.create({ key: 'admin_login' });
+
     loginSetting.value = login;
     await this.settingsRepo.save(loginSetting);
 
     if (password && password.trim().length > 0) {
       const hash = await bcrypt.hash(password, 10);
-      let passSetting = await this.settingsRepo.findOne({ where: { key: 'admin_password' } });
-      if (!passSetting) passSetting = this.settingsRepo.create({ key: 'admin_password' });
-      
+      let passSetting = await this.settingsRepo.findOne({
+        where: { key: 'admin_password' },
+      });
+      if (!passSetting)
+        passSetting = this.settingsRepo.create({ key: 'admin_password' });
+
       passSetting.value = hash;
       await this.settingsRepo.save(passSetting);
     }
-    
-    this.logger.log(`Профиль администратора обновлен. Новый логин: ${login}`);
+
+    this.logger.debug(`Профиль администратора обновлен. Новый логин: ${login}`);
   }
 
   async seedAdmin() {
-    const login = await this.settingsRepo.findOne({ where: { key: 'admin_login' } });
-    
+    const login = await this.settingsRepo.findOne({
+      where: { key: 'admin_login' },
+    });
+
     if (!login) {
-      this.logger.log('Инициализация администратора...');
+      this.logger.debug('Инициализация администратора...');
       const envLogin = this.configService.get<string>('ADMIN_LOGIN') || 'admin';
-      const envPass = this.configService.get<string>('ADMIN_PASSWORD') || 'admin';
-      
-      const loginSetting = this.settingsRepo.create({ key: 'admin_login', value: envLogin });
+      const envPass =
+        this.configService.get<string>('ADMIN_PASSWORD') || 'admin';
+
+      const loginSetting = this.settingsRepo.create({
+        key: 'admin_login',
+        value: envLogin,
+      });
       await this.settingsRepo.save(loginSetting);
 
       const hash = await bcrypt.hash(envPass, 10);
-      const passSetting = this.settingsRepo.create({ key: 'admin_password', value: hash });
+      const passSetting = this.settingsRepo.create({
+        key: 'admin_password',
+        value: hash,
+      });
       await this.settingsRepo.save(passSetting);
-      
-      this.logger.log('Администратор успешно создан.');
+
+      this.logger.debug('Администратор успешно создан.');
     } else {
-      this.logger.log('Администратор уже существует в базе.');
+      this.logger.debug('Администратор уже существует в базе.');
     }
   }
 }

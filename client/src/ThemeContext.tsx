@@ -1,15 +1,10 @@
+/* eslint-disable react-refresh/only-export-components -- экспорты констант и хука вне компонента */
 import React, { createContext, useState, useMemo, useContext, useEffect } from 'react';
 import { ThemeProvider as MuiThemeProvider, createTheme } from '@mui/material';
 import CssBaseline from '@mui/material/CssBaseline';
 import useMediaQuery from '@mui/material/useMediaQuery';
-import { getDesignTokens } from './theme'; 
-
-type ColorMode = 'light' | 'dark' | 'system';
-
-interface ThemeContextType {
-  mode: ColorMode;
-  toggleColorMode: () => void;
-}
+import { getDesignTokens } from './theme';
+import type { ColorMode, ThemeContextType } from './types/theme';
 
 const ThemeContext = createContext<ThemeContextType>({} as ThemeContextType);
 

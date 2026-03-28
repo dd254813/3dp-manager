@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Delete, Body, Param, Put } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Body,
+  Param,
+  Put,
+} from '@nestjs/common';
 import { SubscriptionsService } from './subscriptions.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 
@@ -17,7 +25,10 @@ export class SubscriptionsController {
   }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() updateSubscriptionDto: CreateSubscriptionDto) {
+  update(
+    @Param('id') id: string,
+    @Body() updateSubscriptionDto: CreateSubscriptionDto,
+  ) {
     return this.subscriptionsService.update(id, updateSubscriptionDto);
   }
 

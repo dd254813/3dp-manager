@@ -1,0 +1,62 @@
+# Принудительно LF для всех текстовых файлов (кроссплатформенность)
+# https://docs.github.com/en/get-started/getting-started-with-git/configuring-git-to-handle-line-endings
+
+# По умолчанию - LF для всех файлов
+* text=auto eol=lf
+
+# Явно бинарные файлы (без обработки)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
+*.zip binary
+*.tar.gz binary
+
+# Shell-скрипты - LF
+*.sh text eol=lf
+
+# Markdown - LF
+*.md text eol=lf
+
+# TypeScript/JavaScript/TSX/JSX - LF
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+
+# CSS/SCSS/JSON/YAML - LF
+*.css text eol=lf
+*.scss text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# HTML/XML - LF
+*.html text eol=lf
+*.xml text eol=lf
+
+# Docker - LF
+Dockerfile text eol=lf
+docker-compose*.yml text eol=lf
+
+# Конфиги - LF
+.eslintrc* text eol=lf
+.prettierrc* text eol=lf
+.editorconfig text eol=lf
+.gitignore text eol=lf
+.env* text eol=lf
+tsconfig*.json text eol=lf
+package*.json text eol=lf
+vite.config.* text eol=lf
+nest-cli.json text eol=lf
+nginx.conf text eol=lf
+
+# Go - LF
+*.go text eol=lf

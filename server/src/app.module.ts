@@ -20,6 +20,7 @@ import { AuthModule } from './auth/auth.module';
 import { ClientModule } from './client/client.module';
 import { TunnelsModule } from './tunnels/tunnels.module';
 import { Tunnel } from './tunnels/entities/tunnel.entity';
+import { SessionModule } from './session/session.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { Tunnel } from './tunnels/entities/tunnel.entity';
       entities: [Setting, Domain, Subscription, Inbound, Tunnel],
       synchronize: true,
     }),
+    SessionModule,
     XuiModule,
     InboundsModule,
     RotationModule,
@@ -44,7 +46,7 @@ import { Tunnel } from './tunnels/entities/tunnel.entity';
     SettingsModule,
     AuthModule,
     ClientModule,
-    TunnelsModule
+    TunnelsModule,
   ],
   controllers: [AppController],
   providers: [
@@ -55,4 +57,4 @@ import { Tunnel } from './tunnels/entities/tunnel.entity';
     },
   ],
 })
-export class AppModule { }
+export class AppModule {}

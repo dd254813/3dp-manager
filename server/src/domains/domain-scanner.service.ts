@@ -1,4 +1,12 @@
-import { BadRequestException, HttpException, HttpStatus, Injectable, InternalServerErrorException, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { spawn, spawnSync } from 'child_process';
 import { isIP } from 'net';
 
@@ -40,15 +48,22 @@ type ScanResult = {
 @Injectable()
 export class DomainScannerService {
   private readonly logger = new Logger(DomainScannerService.name);
-  private readonly scannerBin = 'RealiTLScanner-linux-64';
+  private readonly scannerBin =
+    process.env.SCANNER_BIN || 'RealiTLScanner-linux-64';
   private isScanRunning = false;
   private readonly logTailLimit = 8000;
   private activeScan: ActiveScanState | null = null;
   private lastScanResult: ScanResult | null = null;
 
   getCapabilities() {
-    const scannerCheck = spawnSync('sh', ['-lc', `command -v ${this.scannerBin}`], { encoding: 'utf-8' });
-    const timeoutCheck = spawnSync('sh', ['-lc', 'command -v timeout'], { encoding: 'utf-8' });
+    const scannerCheck = spawnSync(
+      'sh',
+      ['-lc', `command -v ${this.scannerBin}`],
+      { encoding: 'utf-8' },
+    );
+    const timeoutCheck = spawnSync('sh', ['-lc', 'command -v timeout'], {
+      encoding: 'utf-8',
+    });
 
     return {
       scannerAvailable: scannerCheck.status === 0,
@@ -72,7 +87,9 @@ export class DomainScannerService {
       startedAt: active ? new Date(active.startedAtMs).toISOString() : null,
       endsAt: active ? new Date(active.endsAtMs).toISOString() : null,
       now: new Date(nowMs).toISOString(),
-      remainingSeconds: active ? Math.max(0, Math.ceil((active.endsAtMs - nowMs) / 1000)) : 0,
+      remainingSeconds: active
+        ? Math.max(0, Math.ceil((active.endsAtMs - nowMs) / 1000))
+        : 0,
       foundCount: active?.foundCount ?? 0,
       lastRunId: this.lastScanResult?.runId ?? null,
       lastFinishedAt: this.lastScanResult?.finishedAt ?? null,
@@ -104,10 +121,14 @@ export class DomainScannerService {
 
     const capabilities = this.getCapabilities();
     if (!capabilities.scannerAvailable) {
-      throw new ServiceUnavailableException(`Не найден ${this.scannerBin} в контейнере`);
+      throw new ServiceUnavailableException(
+        `Не найден ${this.scannerBin} в контейнере`,
+      );
     }
     if (!capabilities.timeoutAvailable) {
-      throw new ServiceUnavailableException('Не найдена утилита timeout в контейнере');
+      throw new ServiceUnavailableException(
+        'Не найдена утилита timeout в контейнере',
+      );
     }
 
     const args = [
@@ -128,7 +149,9 @@ export class DomainScannerService {
     const startedAtMs = Date.now();
     const endsAtMs = startedAtMs + scanSeconds * 1000;
 
-    this.logger.log(`Starting scanner: addr=${addr}, seconds=${scanSeconds}, thread=${thread}, timeout=${connectTimeout}`);
+    this.logger.debug(
+      `Starting scanner: addr=${addr}, seconds=${scanSeconds}, thread=${thread}, timeout=${connectTimeout}`,
+    );
 
     this.isScanRunning = true;
     this.activeScan = {
@@ -178,7 +201,9 @@ export class DomainScannerService {
         child.on('close', (code) => resolve(code ?? -1));
       }).catch((error: NodeJS.ErrnoException) => {
         this.logger.error(`Scanner process failed to start: ${error.message}`);
-        throw new ServiceUnavailableException(`Не удалось запустить сканер: ${error.message}`);
+        throw new ServiceUnavailableException(
+          `Не удалось запустить сканер: ${error.message}`,
+        );
       });
 
       if (stdoutRemainder) {
@@ -190,8 +215,12 @@ export class DomainScannerService {
 
       const timedOut = exitCode === 124 || exitCode === 137 || exitCode === 143;
       if (exitCode !== 0 && !timedOut) {
-        this.logger.error(`Scanner failed, code=${exitCode}, stderr=${stderr.slice(-1200)}`);
-        throw new InternalServerErrorException(`Сканер завершился с ошибкой (code=${exitCode})`);
+        this.logger.error(
+          `Scanner failed, code=${exitCode}, stderr=${stderr.slice(-1200)}`,
+        );
+        throw new InternalServerErrorException(
+          `Сканер завершился с ошибкой (code=${exitCode})`,
+        );
       }
 
       const sortedDomains = [...domains].sort();
@@ -248,7 +277,12 @@ export class DomainScannerService {
     return cleaned;
   }
 
-  private clampNumber(value: number | undefined, fallback: number, min: number, max: number) {
+  private clampNumber(
+    value: number | undefined,
+    fallback: number,
+    min: number,
+    max: number,
+  ) {
     const num = Number.isFinite(value) ? Number(value) : fallback;
     if (num < min) return min;
     if (num > max) return max;
@@ -275,7 +309,9 @@ export class DomainScannerService {
 
     // Reject URL-like input to avoid ambiguous parsing.
     if (/^[a-z]+:\/\//i.test(value) || /[/?#]/.test(value)) {
-      throw new BadRequestException('Укажите только IP или hostname без схемы и пути');
+      throw new BadRequestException(
+        'Укажите только IP или hostname без схемы и пути',
+      );
     }
 
     // Support common copy-paste format: [IPv6]
@@ -287,11 +323,17 @@ export class DomainScannerService {
       throw new BadRequestException('Некорректный addr');
     }
 
-    if (value === 'localhost' || isIP(value) > 0 || this.isValidHostname(value)) {
+    if (
+      value === 'localhost' ||
+      isIP(value) > 0 ||
+      this.isValidHostname(value)
+    ) {
       return value;
     }
 
-    throw new BadRequestException('Некорректный addr: укажите IPv4/IPv6 или hostname');
+    throw new BadRequestException(
+      'Некорректный addr: укажите IPv4/IPv6 или hostname',
+    );
   }
 
   private isValidHostname(hostname: string) {

@@ -22,7 +22,7 @@ function App() {
             <Route element={<PublicRoute />}>
               <Route path="/login" element={<LoginPage />} />
             </Route>
-            
+
             <Route path="/" element={
               <RequireAuth>
                 <Layout />

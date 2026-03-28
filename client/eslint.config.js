@@ -19,5 +19,9 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      'react-hooks/exhaustive-deps': 'error',
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
 ])

@@ -10,4 +10,4 @@ export const CONNECTION_TYPES = [
   'custom',
 ] as const;
 
-export type ConnectionType = typeof CONNECTION_TYPES[number];
+export type ConnectionType = (typeof CONNECTION_TYPES)[number];

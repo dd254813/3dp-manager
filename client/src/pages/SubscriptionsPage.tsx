@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   Box, Button, Typography, Paper, Table, TableBody, TableCell,
   TableHead, TableRow, IconButton, Dialog, DialogTitle,
   DialogContent, TextField, DialogActions, FormControl, Select,
-  InputAdornment, InputLabel, MenuItem,
+  InputAdornment, InputLabel, MenuItem, Snackbar, Alert,
   useTheme,
   useMediaQuery,
   Menu,
@@ -12,13 +12,14 @@ import {
 } from '@mui/material';
 import { Delete, Add, Link as LinkIcon, OpenInNew, ContentCopy, Dns, Router, Edit, MoreVert, Remove } from '@mui/icons-material';
 import api from '../api';
+import { Logger } from '../utils/logger';
 
 interface Subscription {
   id: string;
   name: string;
   uuid: string;
-  inbounds: any[];
-  inboundsConfig?: any[];
+  inbounds: unknown[];
+  inboundsConfig?: unknown[];
 }
 
 interface Tunnel {
@@ -61,7 +62,7 @@ const patchLink = function (link: string, newHost: string): string {
       const newJsonStr = JSON.stringify(config);
       const newBase64 = Buffer.from(newJsonStr).toString('base64');
       return `vmess://${newBase64}`;
-    } catch (e) {
+    } catch {
       return link;
     }
   } else if (link.startsWith('vless://') || link.startsWith('trojan://')) {
@@ -97,21 +98,36 @@ export default function SubscriptionsPage() {
   const [linksOpen, setLinksOpen] = useState(false);
   const [currentLinks, setCurrentLinks] = useState<string[]>([]);
 
+  // Snackbar state for notifications
+  const [snackbar, setSnackbar] = useState({ open: false, type: 'success' as 'success' | 'error', message: '' });
+
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', onConfirm: () => {} });
+
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-  useEffect(() => { loadSubs(); }, []);
+  const loadSubs = useCallback(async () => {
+    try {
+      Logger.debug('Loading subscriptions...', 'Subs');
+      const { data } = await api.get('/subscriptions');
+      setSubs(data);
+      Logger.debug(`Loaded ${data.length} subscriptions`, 'Subs');
 
-  const loadSubs = async () => {
-    const { data } = await api.get('/subscriptions');
-    setSubs(data);
+      const tunnelsRes = await api.get('/tunnels');
+      setTunnels(tunnelsRes.data.filter((el: Tunnel) => el.isInstalled));
+      Logger.debug(`Loaded ${tunnelsRes.data.filter((el: Tunnel) => el.isInstalled).length} active tunnels`, 'Subs');
 
-    const tunnelsRes = await api.get('/tunnels');
-    setTunnels(tunnelsRes.data.filter((el: Tunnel) => el.isInstalled));
+      const allDomains = await api.get('/domains/all');
+      setDomains(allDomains.data);
+      Logger.debug(`Loaded ${allDomains.data.length} domains`, 'Subs');
+    } catch (error) {
+      Logger.error('Failed to load', 'Subs', error);
+      throw error;
+    }
+  }, []);
 
-    const allDomains = await api.get('/domains/all');
-    setDomains(allDomains.data);
-  };
+  useEffect(() => { loadSubs(); }, [loadSubs]);
 
   const handleActionMenuClick = (event: React.MouseEvent<HTMLButtonElement>, sub: Subscription) => {
     setMenuAnchorEl(event.currentTarget);
@@ -201,11 +217,11 @@ export default function SubscriptionsPage() {
 
   const handleSave = async () => {
     if (Object.keys(portErrors).length > 0) {
-      alert('Пожалуйста, исправьте ошибки с портами');
+      setSnackbar({ open: true, type: 'error', message: 'Пожалуйста, исправьте ошибки с портами' });
       return;
     }
     if (!name.trim()) {
-      alert('Введите имя подписки');
+      setSnackbar({ open: true, type: 'error', message: 'Введите имя подписки' });
       return;
     }
 
@@ -224,32 +240,46 @@ export default function SubscriptionsPage() {
     };
 
     try {
+      Logger.debug(`${editingId ? 'Updating' : 'Creating'} subscription`, 'Subs', payload);
       if (editingId) {
         await api.put(`/subscriptions/${editingId}`, payload);
+        Logger.debug(`Updated subscription ${editingId}`, 'Subs');
       } else {
         await api.post('/subscriptions', payload);
+        Logger.debug('Created subscription', 'Subs');
       }
       setOpen(false);
       loadSubs();
-    } catch (error: any) {
-      alert(error.response?.data?.message || 'Произошла ошибка при сохранении');
+      setSnackbar({ open: true, type: 'success', message: editingId ? 'Подписка обновлена' : 'Подписка создана' });
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Произошла ошибка при сохранении';
+      Logger.error(`Save error: ${message}`, 'Subs');
+      setSnackbar({ open: true, type: 'error', message });
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Удалить подписку и все соединения?')) {
-      await api.delete(`/subscriptions/${id}`);
-      loadSubs();
-    }
+    setConfirmDialog({
+      open: true,
+      title: 'Удалить подписку и все соединения?',
+      onConfirm: async () => {
+        Logger.debug(`Deleting subscription: ${id}`, 'Subs');
+        await api.delete(`/subscriptions/${id}`);
+        Logger.debug(`Deleted subscription ${id}`, 'Subs');
+        loadSubs();
+        setSnackbar({ open: true, type: 'success', message: 'Подписка удалена' });
+      }
+    });
   };
 
   const showLinks = (sub: Subscription) => {
-    let links = [];
+    let links: string[] = [];
     if (selectedServer === 'main') {
-      links = sub.inbounds?.map(i => i.link).filter(Boolean) || [];
+      links = sub.inbounds?.map(i => (i as { link?: string }).link).filter(Boolean) || [];
     } else {
-      const host = tunnels[+selectedServer - 1].domain.length > 0 ? tunnels[+selectedServer - 1].domain : tunnels[+selectedServer - 1].ip;
-      links = sub.inbounds?.map(i => patchLink(i.link, host)).filter(Boolean) || [];
+      const tunnelIndex = +selectedServer - 1;
+      const host = tunnels[tunnelIndex]?.domain?.length > 0 ? tunnels[tunnelIndex].domain : tunnels[tunnelIndex].ip;
+      links = sub.inbounds?.map(i => patchLink((i as { link?: string }).link || '', host)).filter(Boolean) || [];
     }
     if (links.length === 0) {
       setCurrentLinks(['Нет активных ссылок (ждите ротации)']);
@@ -311,14 +341,14 @@ export default function SubscriptionsPage() {
                     <>
                       <IconButton
                         color="primary"
-                        onClick={() => navigator.clipboard.writeText(selectedServer === 'main' ? `${location.protocol}//${location.hostname}:3000/bus/${sub.uuid}` : `${location.protocol}//${location.hostname}:3000/bus/${sub.uuid}/${selectedServer}`)}
+                        onClick={() => navigator.clipboard.writeText(`${location.protocol}//${location.hostname}:${location.port}/bus/${sub.uuid}${selectedServer !== 'main' ? `/${selectedServer}` : ''}`)}
                         title="Копировать ссылку"
                       >
                         <ContentCopy />
                       </IconButton>
                       <IconButton
                         color="primary"
-                        onClick={() => window.open(selectedServer === 'main' ? `${location.protocol}//${location.hostname}:3000/bus/${sub.uuid}` : `${location.protocol}//${location.hostname}:3000/bus/${sub.uuid}/${selectedServer}`, '_blank')}
+                        onClick={() => window.open(`${location.protocol}//${location.hostname}:${location.port}/bus/${sub.uuid}${selectedServer !== 'main' ? `/${selectedServer}` : ''}`, '_blank')}
                         title="Открыть подписку"
                       >
                         <OpenInNew />
@@ -346,13 +376,13 @@ export default function SubscriptionsPage() {
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
         {isMobile && activeSub && (
-          <MenuItem onClick={() => navigator.clipboard.writeText(selectedServer === 'main' ? `${location.protocol}//${location.hostname}:3000/bus/${activeSub.uuid}` : `${location.protocol}//${location.hostname}:3000/bus/${activeSub.uuid}/${selectedServer}`)}>
+          <MenuItem onClick={() => navigator.clipboard.writeText(`${location.protocol}//${location.hostname}:${location.port}/bus/${activeSub.uuid}${selectedServer !== 'main' ? `/${selectedServer}` : ''}`)}>
             <ListItemIcon><ContentCopy fontSize="small" color="primary" /></ListItemIcon>
             <ListItemText>Копировать ссылку</ListItemText>
           </MenuItem>
         )}
         {isMobile && activeSub && (
-          <MenuItem onClick={() => window.open(selectedServer === 'main' ? `${location.protocol}//${location.hostname}:3000/bus/${activeSub.uuid}` : `${location.protocol}//${location.hostname}:3000/bus/${activeSub.uuid}/${selectedServer}`, '_blank')}>
+          <MenuItem onClick={() => window.open(`${location.protocol}//${location.hostname}:${location.port}/bus/${activeSub.uuid}${selectedServer !== 'main' ? `/${selectedServer}` : ''}`, '_blank')}>
             <ListItemIcon><OpenInNew fontSize="small" color="primary" /></ListItemIcon>
             <ListItemText>Открыть подписку</ListItemText>
           </MenuItem>
@@ -502,6 +532,43 @@ export default function SubscriptionsPage() {
           <Button onClick={() => setLinksOpen(false)}>Закрыть</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={confirmDialog.open} onClose={() => setConfirmDialog({ ...confirmDialog, open: false })}>
+        <DialogTitle>Подтверждение</DialogTitle>
+        <DialogContent>
+          <Typography>{confirmDialog.title}</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDialog({ ...confirmDialog, open: false })}>Отмена</Button>
+          <Button
+            onClick={() => {
+              confirmDialog.onConfirm();
+              setConfirmDialog({ ...confirmDialog, open: false });
+            }}
+            variant="contained"
+            color="error"
+          >
+            Удалить
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Snackbar notifications */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          severity={snackbar.type}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

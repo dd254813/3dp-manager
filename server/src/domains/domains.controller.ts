@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, Param, Delete, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Delete,
+  Query,
+} from '@nestjs/common';
 import { DomainsService } from './domains.service';
 import { DomainScannerService } from './domain-scanner.service';
 
@@ -7,7 +15,7 @@ export class DomainsController {
   constructor(
     private readonly domainsService: DomainsService,
     private readonly domainScannerService: DomainScannerService,
-  ) { }
+  ) {}
 
   @Post()
   create(@Body() body: { name: string }) {
@@ -35,20 +43,25 @@ export class DomainsController {
   }
 
   @Post('scan/start')
-  startScan(@Body() body: { addr: string; scanSeconds?: number; thread?: number; timeout?: number }) {
+  startScan(
+    @Body()
+    body: {
+      addr: string;
+      scanSeconds?: number;
+      thread?: number;
+      timeout?: number;
+    },
+  ) {
     return this.domainScannerService.startScan(body);
   }
 
   @Get('all')
   findAllWithoutPagination() {
-    return this.domainsService.findAllUnpaginated(); 
+    return this.domainsService.findAllUnpaginated();
   }
 
   @Get()
-  findAll(
-    @Query('page') page: number,
-    @Query('limit') limit: number
-  ) {
+  findAll(@Query('page') page: number, @Query('limit') limit: number) {
     const pageNum = page ? +page : 1;
     const limitNum = limit ? +limit : 10;
 

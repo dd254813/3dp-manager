@@ -10,6 +10,7 @@ import { Setting } from '../settings/entities/setting.entity';
 
 import { XuiService } from '../xui/xui.service';
 import { InboundBuilderService } from '../inbounds/inbound-builder.service';
+import { XuiInboundRaw } from '../inbounds/xui-inbound.types';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -30,38 +31,87 @@ export class RotationService implements OnModuleInit {
   }
 
   private async initDefaultSettings() {
-    const key = 'rotation_status';
-    const existing = await this.settingRepo.findOne({ where: { key } });
+    const statusKey = 'rotation_status';
+    const intervalKey = 'rotation_interval';
+    const lastRunKey = 'last_rotation_timestamp';
 
-    if (!existing) {
-      this.logger.log(`Инициализация настройки: ${key} = active`);
+    // Инициализация статуса ротации
+    const existingStatus = await this.settingRepo.findOne({
+      where: { key: statusKey },
+    });
+    if (!existingStatus) {
+      this.logger.debug(`Инициализация настройки: ${statusKey} = active`);
       const newSetting = this.settingRepo.create({
-        key: key,
+        key: statusKey,
         value: 'active',
       });
       await this.settingRepo.save(newSetting);
     } else {
-        this.logger.log(`Текущий статус ротации: ${existing.value}`);
+      this.logger.debug(`Текущий статус ротации: ${existingStatus.value}`);
+    }
+
+    // Инициализация интервала ротации (по умолчанию 30 минут)
+    const existingInterval = await this.settingRepo.findOne({
+      where: { key: intervalKey },
+    });
+    if (!existingInterval) {
+      this.logger.debug(`Инициализация настройки: ${intervalKey} = 30`);
+      const newSetting = this.settingRepo.create({
+        key: intervalKey,
+        value: '30',
+      });
+      await this.settingRepo.save(newSetting);
+    }
+
+    // Инициализация last_rotation_timestamp (текущее время, чтобы не было ложной ротации при старте)
+    const existingLastRun = await this.settingRepo.findOne({
+      where: { key: lastRunKey },
+    });
+    if (!existingLastRun) {
+      const now = Date.now();
+      this.logger.debug(`Инициализация настройки: ${lastRunKey} = ${now}`);
+      const newSetting = this.settingRepo.create({
+        key: lastRunKey,
+        value: now.toString(),
+      });
+      await this.settingRepo.save(newSetting);
+    } else {
+      this.logger.debug(`Последняя ротация: ${existingLastRun.value}`);
     }
   }
 
   @Cron(CronExpression.EVERY_MINUTE)
   async handleTicker() {
-    const intervalSetting = await this.settingRepo.findOne({ where: { key: 'rotation_interval' } });
-    const intervalMinutes = intervalSetting ? parseInt(intervalSetting.value, 10) : 30;
+    const intervalSetting = await this.settingRepo.findOne({
+      where: { key: 'rotation_interval' },
+    });
+    const intervalMinutes = intervalSetting
+      ? parseInt(intervalSetting.value, 10)
+      : 30;
 
-    const lastRunSetting = await this.settingRepo.findOne({ where: { key: 'last_rotation_timestamp' } });
+    const lastRunSetting = await this.settingRepo.findOne({
+      where: { key: 'last_rotation_timestamp' },
+    });
     const lastRun = lastRunSetting ? parseInt(lastRunSetting.value, 10) : 0;
 
     const now = Date.now();
     const diffMinutes = (now - lastRun) / 1000 / 60;
-    const statusSetting = await this.settingRepo.findOne({ where: { key: 'rotation_status' } });
+    const statusSetting = await this.settingRepo.findOne({
+      where: { key: 'rotation_status' },
+    });
     const isStopped = statusSetting?.value === 'stopped';
+
+    this.logger.debug(
+      `Планировщик: интервал=${intervalMinutes}мин, прошло=${diffMinutes.toFixed(1)}мин, статус=${isStopped ? 'stopped' : 'active'}`,
+    );
 
     if (diffMinutes < intervalMinutes || isStopped) {
       return;
     }
 
+    this.logger.debug(
+      `Запуск ротации (прошло ${diffMinutes.toFixed(1)}мин при интервале ${intervalMinutes}мин)`,
+    );
     await this.performRotation();
 
     await this.saveSetting('last_rotation_timestamp', now.toString());
@@ -74,8 +124,8 @@ export class RotationService implements OnModuleInit {
     await this.settingRepo.save(s);
   }
 
-  async performRotation() {    
-    this.logger.log('Запуск плановой ротации...');
+  async performRotation() {
+    this.logger.debug('Запуск плановой ротации...');
 
     const isLoginSuccess = await this.xuiService.login();
     if (!isLoginSuccess) {
@@ -83,7 +133,10 @@ export class RotationService implements OnModuleInit {
       return { success: false, message: 'Не удалось войти в панель 3x-ui' };
     }
 
-    const subscriptions = await this.subRepo.find({ where: { isEnabled: true }, relations: ['inbounds'] });
+    const subscriptions = await this.subRepo.find({
+      where: { isEnabled: true },
+      relations: ['inbounds'],
+    });
     if (subscriptions.length === 0) {
       return { success: false, message: 'Нет активных подписок для ротации' };
     }
@@ -98,12 +151,12 @@ export class RotationService implements OnModuleInit {
       await this.rotateSubscription(sub, domains);
     }
 
-    this.logger.log('Ротация завершена.');
+    this.logger.debug('Ротация завершена.');
     return { success: true, message: 'Ротация успешно выполнена' };
   }
 
-private async rotateSubscription(sub: Subscription, domains: Domain[]) {
-    this.logger.log(`Ротация для подписки: ${sub.name} (${sub.uuid})`);
+  private async rotateSubscription(sub: Subscription, domains: Domain[]) {
+    this.logger.debug(`Ротация для подписки: ${sub.name} (${sub.uuid})`);
 
     // Удаляем старые инбаунды
     if (sub.inbounds && sub.inbounds.length > 0) {
@@ -117,14 +170,18 @@ private async rotateSubscription(sub: Subscription, domains: Domain[]) {
 
     const keys = await this.xuiService.getNewX25519Cert();
     if (!keys) {
-      this.logger.error("Не удалось получить Reality ключи, пропускаем подписку");
+      this.logger.error(
+        'Не удалось получить Reality ключи, пропускаем подписку',
+      );
       return;
     }
 
     const usedPorts = new Set<number>();
     const host = await this.settingRepo.findOne({ where: { key: 'xui_host' } });
     const serverAddress = host?.value || 'localhost';
-    const flag = await this.settingRepo.findOne({ where: { key: 'xui_geo_flag' } });
+    const flag = await this.settingRepo.findOne({
+      where: { key: 'xui_geo_flag' },
+    });
     const flagEmoji = flag?.value ?? '%F0%9F%92%AF';
 
     // Получаем конфиг или пустой массив
@@ -133,7 +190,7 @@ private async rotateSubscription(sub: Subscription, domains: Domain[]) {
     for (const config of inboundsConfig) {
       const type = config.type;
       const uuid = uuidv4();
-      
+
       let sni = '';
 
       // === 1. Обработка Custom ===
@@ -144,7 +201,7 @@ private async rotateSubscription(sub: Subscription, domains: Domain[]) {
           protocol: 'custom',
           remark: 'custom-link',
           link: config.link || '',
-          subscription: sub
+          subscription: sub,
         });
         await this.inboundRepo.save(newInbound);
         continue;
@@ -154,42 +211,64 @@ private async rotateSubscription(sub: Subscription, domains: Domain[]) {
 
       // === 2. Обработка Hysteria2 ===
       if (type === 'hysteria2-udp') {
-        const link = this.inboundBuilder.buildHysteria2Link(serverAddress, sni, flagEmoji + '%20hysteria2-udp');
+        const link = this.inboundBuilder.buildHysteria2Link(
+          serverAddress,
+          sni,
+          flagEmoji + '%20hysteria2-udp',
+        );
         const newInbound = this.inboundRepo.create({
-          xuiId: 0, 
+          xuiId: 0,
           port: 0, // Обычно Hysteria висит на 443, фактический порт вытаскивается в билдере
           protocol: 'hysteria2',
           remark: 'hysteria2-udp',
           link: link,
-          subscription: sub
+          subscription: sub,
         });
         await this.inboundRepo.save(newInbound);
         continue;
       }
 
       // === 3. Обработка стандартных инбаундов Xray (3x-ui) ===
-      
+
       // Определяем порт
       let port = 0;
       if (config.port === 'random' || !config.port) {
         port = await this.getFreePort(0, usedPorts);
       } else {
         // Если передан конкретный порт строкой или числом
-        port = typeof config.port === 'string' ? parseInt(config.port, 10) : config.port;
+        port =
+          typeof config.port === 'string'
+            ? parseInt(config.port, 10)
+            : config.port;
       }
       usedPorts.add(port);
 
-      let xuiConfig: any;
+      let xuiConfig: XuiInboundRaw | null = null;
 
       switch (type) {
         case 'vless-tcp-reality':
-          xuiConfig = this.inboundBuilder.buildVlessRealityTcp({ port, uuid, sni, ...keys });
+          xuiConfig = this.inboundBuilder.buildVlessRealityTcp({
+            port,
+            uuid,
+            sni,
+            ...keys,
+          });
           break;
         case 'vless-xhttp-reality':
-          xuiConfig = this.inboundBuilder.buildVlessRealityXhttp({ port, uuid, sni, ...keys });
+          xuiConfig = this.inboundBuilder.buildVlessRealityXhttp({
+            port,
+            uuid,
+            sni,
+            ...keys,
+          });
           break;
         case 'vless-grpc-reality':
-          xuiConfig = this.inboundBuilder.buildVlessRealityGrpc({ port, uuid, sni, ...keys });
+          xuiConfig = this.inboundBuilder.buildVlessRealityGrpc({
+            port,
+            uuid,
+            sni,
+            ...keys,
+          });
           break;
         case 'vless-ws':
           xuiConfig = this.inboundBuilder.buildVlessWs({ port, uuid, sni });
@@ -201,7 +280,12 @@ private async rotateSubscription(sub: Subscription, domains: Domain[]) {
           xuiConfig = this.inboundBuilder.buildShadowsocksTcp({ port, uuid });
           break;
         case 'trojan-tcp-reality':
-          xuiConfig = this.inboundBuilder.buildTrojanRealityTcp({ port, uuid, sni, ...keys });
+          xuiConfig = this.inboundBuilder.buildTrojanRealityTcp({
+            port,
+            uuid,
+            sni,
+            ...keys,
+          });
           break;
         default:
           this.logger.warn(`Неизвестный тип инбаунда: ${type}`);
@@ -210,9 +294,19 @@ private async rotateSubscription(sub: Subscription, domains: Domain[]) {
 
       const xuiId = await this.xuiService.addInbound(xuiConfig);
 
-      if (xuiId) {
-        const idOrPass = xuiConfig.settings ? JSON.parse(xuiConfig.settings).clients?.[0]?.id || JSON.parse(xuiConfig.settings).clients?.[0]?.password : "";
-        const fullLink = this.inboundBuilder.buildInboundLink(xuiConfig, serverAddress, idOrPass, flagEmoji);
+      if (xuiId && xuiConfig) {
+        const settings = JSON.parse(xuiConfig.settings) as {
+          clients?: Array<{ id?: string; password?: string }>;
+        };
+        const idOrPass =
+          settings.clients?.[0]?.id || settings.clients?.[0]?.password || '';
+
+        const fullLink = this.inboundBuilder.buildInboundLink(
+          xuiConfig,
+          serverAddress,
+          idOrPass,
+          flagEmoji,
+        );
 
         const newInbound = this.inboundRepo.create({
           xuiId: xuiId,
@@ -220,7 +314,7 @@ private async rotateSubscription(sub: Subscription, domains: Domain[]) {
           protocol: xuiConfig.protocol,
           remark: xuiConfig.remark,
           link: fullLink,
-          subscription: sub
+          subscription: sub,
         });
         await this.inboundRepo.save(newInbound);
       }
@@ -231,9 +325,14 @@ private async rotateSubscription(sub: Subscription, domains: Domain[]) {
     return list[Math.floor(Math.random() * list.length)].name;
   }
 
-  private async getFreePort(preferred: number, currentBatch: Set<number>): Promise<number> {
+  private async getFreePort(
+    preferred: number,
+    currentBatch: Set<number>,
+  ): Promise<number> {
     if (preferred > 0 && !currentBatch.has(preferred)) {
-      const exists = await this.inboundRepo.findOne({ where: { port: preferred } });
+      const exists = await this.inboundRepo.findOne({
+        where: { port: preferred },
+      });
       if (!exists) return preferred;
     }
 

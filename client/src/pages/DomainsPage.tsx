@@ -1,7 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Box, TextField, Button, Typography, List, ListItem, ListItemText, IconButton, Paper, TablePagination, useTheme, useMediaQuery, Alert, Stack, CircularProgress, Divider, Link as MuiLink, Accordion, AccordionSummary, AccordionDetails } from '@mui/material';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { Box, TextField, Button, Typography, List, ListItem, ListItemText, IconButton, Paper, TablePagination, useTheme, useMediaQuery, Alert, Stack, CircularProgress, Divider, Link as MuiLink, Accordion, AccordionSummary, AccordionDetails, Snackbar, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
 import { Delete, Add, UploadFile, Remove, ExpandMore, Download } from '@mui/icons-material';
 import api from '../api';
+import { getApiErrorMessage, getApiErrorStatus } from '../utils/errorHandlers';
+import { Logger } from '../utils/logger';
 
 interface Domain { id: number; name: string; }
 interface ScanCapabilities {
@@ -68,6 +70,12 @@ export default function DomainsPage() {
   const [scanStatus, setScanStatus] = useState<ScanStatusResponse | null>(null);
   const [activeScanRunId, setActiveScanRunId] = useState<string | null>(null);
 
+  // Snackbar state for notifications
+  const [snackbar, setSnackbar] = useState({ open: false, type: 'success' as 'success' | 'error', message: '' });
+
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', onConfirm: () => {} });
+
   const clampInteger = (value: number, fallback: number, min: number, max: number) => {
     const num = Number.isFinite(value) ? Math.floor(value) : fallback;
     if (num < min) return min;
@@ -75,12 +83,18 @@ export default function DomainsPage() {
     return num;
   };
 
-  const isLoopbackHost = (value: string) => {
+  const isLoopbackHost = useCallback((value: string) => {
     const host = value.trim().toLowerCase();
     return host === 'localhost' || host === '127.0.0.1' || host === '::1';
-  };
+  }, []);
 
-  const collectAddrCandidatesFromSettings = (settings: any) => {
+  interface Settings {
+    xui_ip?: string;
+    xui_host?: string;
+    xui_url?: string;
+  }
+
+  const collectAddrCandidatesFromSettings = useCallback((settings: Settings) => {
     const candidates: string[] = [];
     const xuiIp = String(settings?.xui_ip || '').trim();
     const xuiHost = String(settings?.xui_host || '').trim();
@@ -95,53 +109,84 @@ export default function DomainsPage() {
         if (parsed.hostname) {
           candidates.push(parsed.hostname.trim());
         }
-      } catch (_e) {
+      } catch {
         // Ignore malformed URL from settings and fall back to runtime hostname.
       }
     }
 
     return candidates.filter(Boolean);
-  };
+  }, []);
 
-  const resolveSuggestedScanAddr = async (opts?: { allowLoopbackFallback?: boolean }) => {
+  const resolveSuggestedScanAddr = useCallback(async (opts?: { allowLoopbackFallback?: boolean }) => {
     const allowLoopbackFallback = Boolean(opts?.allowLoopbackFallback);
     let settingsCandidates: string[] = [];
 
     try {
       const settingsRes = await api.get('/settings');
+      Logger.debug('Domains page: Settings response', 'Domains', settingsRes.data);
+      
       settingsCandidates = collectAddrCandidatesFromSettings(settingsRes.data);
+      Logger.debug('Domains page: Collected address candidates from settings', 'Domains', {
+        candidates: settingsCandidates,
+        xui_ip: settingsRes.data?.xui_ip,
+        xui_host: settingsRes.data?.xui_host,
+        xui_url: settingsRes.data?.xui_url
+      });
+      
       const publicFromSettings = settingsCandidates.find((c) => !isLoopbackHost(c));
+      Logger.debug('Domains page: Looking for public address', 'Domains', {
+        publicFromSettings,
+        allCandidates: settingsCandidates
+      });
+      
       if (publicFromSettings) {
         return publicFromSettings;
       }
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      Logger.error('Failed to collect address candidates from settings', 'Domains', error);
     }
 
     // Fallback: panel host where user opened 3dp (often the target VPS in real usage).
     const runtimeHost = window.location.hostname;
-    if (runtimeHost && !isLoopbackHost(runtimeHost)) {
-      return runtimeHost;
+    Logger.debug('Domains page: Checking runtime host as fallback', 'Domains', {
+      runtimeHost,
+      isLoopback: isLoopbackHost(runtimeHost)
+    });
+    
+    // Если настройки пустые и мы на localhost — предлагаем localhost с предупреждением
+    // Это позволяет пользователю начать работу и затем изменить на правильный IP
+    if (runtimeHost) {
+      if (!isLoopbackHost(runtimeHost)) {
+        Logger.debug('Domains page: Using runtime host as address', 'Domains', runtimeHost);
+        return runtimeHost;
+      } else if (allowLoopbackFallback) {
+        // Явно разрешили localhost fallback
+        Logger.debug('Domains page: Using localhost fallback (explicit)', 'Domains', runtimeHost);
+        return runtimeHost;
+      } else if (settingsCandidates.length === 0) {
+        // Настройки пустые — используем localhost как единственный вариант
+        Logger.warn('Domains page: No settings configured, using localhost as temporary placeholder', 'Domains');
+        return runtimeHost;
+      }
     }
 
-    // Optional fallback for explicit reset action: prefer some known address
-    // over keeping stale user input in the field.
+    // Last resort: first from settings even if loopback
     if (allowLoopbackFallback) {
       const anyFromSettings = settingsCandidates[0];
       if (anyFromSettings) return anyFromSettings;
-      if (runtimeHost) return runtimeHost;
     }
 
+    Logger.warn('Domains page: No address found anywhere', 'Domains');
     return '';
-  };
+  }, [collectAddrCandidatesFromSettings, isLoopbackHost]);
 
-  const fetchScanStatus = async () => {
+  const fetchScanStatus = useCallback(async () => {
     const { data } = await api.get('/domains/scan/status');
     setScanStatus(data);
     return data as ScanStatusResponse;
-  };
+  }, []);
 
-  const fetchLastScanResult = async (expectedRunId?: string | null) => {
+  const fetchLastScanResult = useCallback(async (expectedRunId?: string | null) => {
     const { data } = await api.get('/domains/scan/last-result');
     if (!data) return null;
     if (expectedRunId && data.runId !== expectedRunId) return null;
@@ -149,22 +194,24 @@ export default function DomainsPage() {
     setScanResult(data);
     setScanCandidates(data.domains || []);
     return data as ScanResponse;
-  };
+  }, []);
 
-  const loadDomains = async () => {
+  const loadDomains = useCallback(async () => {
     try {
+      Logger.debug(`Loading page ${page + 1} (limit: ${rowsPerPage})`, 'Domains');
       const { data } = await api.get(`/domains?page=${page + 1}&limit=${rowsPerPage}`);
 
       setDomains(data.data);
       setTotalCount(data.total);
-    } catch (e) {
-      console.error(e);
+      Logger.debug(`Loaded ${data.data.length} domains (total: ${data.total})`, 'Domains');
+    } catch (error) {
+      Logger.error('Failed to load', 'Domains', error);
     }
-  };
+  }, [page, rowsPerPage]);
 
   useEffect(() => {
     loadDomains();
-  }, [page, rowsPerPage]);
+  }, [loadDomains]);
 
   useEffect(() => {
     const loadScannerContext = async () => {
@@ -181,53 +228,87 @@ export default function DomainsPage() {
             setScanError('');
           }
         }
-      } catch (e) {
-        console.error(e);
-      }
-
-      try {
-        const defaultAddr = await resolveSuggestedScanAddr();
-        if (defaultAddr) {
-          // Do not overwrite manually saved value from localStorage.
-          setScanAddr((prev) => (prev.trim() ? prev : defaultAddr));
-        }
-      } catch (e) {
-        console.error(e);
+      } catch (error) {
+        Logger.error('Failed to load scanner context', 'Domains', error);
       }
     };
 
     loadScannerContext();
-  }, []);
+  }, [fetchScanStatus]);
 
   useEffect(() => {
     // Hydrate scanner UI state once so users do not lose pre-import review list after reload.
     try {
       const raw = localStorage.getItem(SCAN_STORAGE_KEY);
-      if (!raw) return;
+      let restoredAddr: string | null = null;
 
-      const parsed = JSON.parse(raw) as {
-        scanAddr?: string;
-        scanSeconds?: number;
-        scanThread?: number;
-        scanTimeout?: number;
-        scanResult?: ScanResponse | null;
-        scanCandidates?: string[];
-        scanPanelExpanded?: boolean;
-      };
+      Logger.debug('Domains page: Starting hydrate', 'Domains', {
+        hasLocalStorage: !!raw,
+        localStorageValue: raw ? JSON.parse(raw).scanAddr : 'N/A'
+      });
 
-      if (typeof parsed.scanAddr === 'string' && parsed.scanAddr.trim()) setScanAddr(parsed.scanAddr);
-      if (typeof parsed.scanSeconds === 'number') setScanSeconds(parsed.scanSeconds);
-      if (typeof parsed.scanThread === 'number') setScanThread(parsed.scanThread);
-      if (typeof parsed.scanTimeout === 'number') setScanTimeout(parsed.scanTimeout);
-      if (parsed.scanResult) setScanResult(parsed.scanResult);
-      if (Array.isArray(parsed.scanCandidates)) setScanCandidates(parsed.scanCandidates);
-      if (typeof parsed.scanPanelExpanded === 'boolean') setScanPanelExpanded(parsed.scanPanelExpanded);
-    } catch (e) {
-      console.error(e);
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          scanAddr?: string;
+          scanSeconds?: number;
+          scanThread?: number;
+          scanTimeout?: number;
+          scanResult?: ScanResponse | null;
+          scanCandidates?: string[];
+          scanPanelExpanded?: boolean;
+        };
+
+        // Восстанавливаем только непустое значение
+        if (typeof parsed.scanAddr === 'string' && parsed.scanAddr.trim()) {
+          restoredAddr = parsed.scanAddr.trim();
+          setScanAddr(restoredAddr);
+          Logger.debug(`Domains page: Restored scanAddr from localStorage: "${restoredAddr}"`, 'Domains');
+        } else {
+          Logger.debug(`Domains page: scanAddr in localStorage is empty/whitespace, will fetch from settings`, 'Domains');
+        }
+        if (typeof parsed.scanSeconds === 'number') setScanSeconds(parsed.scanSeconds);
+        if (typeof parsed.scanThread === 'number') setScanThread(parsed.scanThread);
+        if (typeof parsed.scanTimeout === 'number') setScanTimeout(parsed.scanTimeout);
+        if (parsed.scanResult) setScanResult(parsed.scanResult);
+        if (Array.isArray(parsed.scanCandidates)) setScanCandidates(parsed.scanCandidates);
+        if (typeof parsed.scanPanelExpanded === 'boolean') setScanPanelExpanded(parsed.scanPanelExpanded);
+      } else {
+        Logger.debug('Domains page: No localStorage data found', 'Domains');
+      }
+
+      // Если scanAddr не был восстановлен (пустой localStorage ИЛИ пустое значение),
+      // пытаемся получить домен из настроек
+      if (!restoredAddr) {
+        Logger.debug('Domains page: Fetching suggested address from settings...', 'Domains');
+        // Пробуем сначала без localhost, если не найдём — разрешаем localhost fallback
+        resolveSuggestedScanAddr({ allowLoopbackFallback: false }).then((defaultAddr) => {
+          if (defaultAddr) {
+            setScanAddr(defaultAddr);
+            Logger.debug(`Domains page: Set scanAddr from settings: "${defaultAddr}"`, 'Domains');
+          } else {
+            // Пытаемся с localhost fallback если совсем ничего не найдено
+            Logger.debug('Domains page: Trying with localhost fallback...', 'Domains');
+            resolveSuggestedScanAddr({ allowLoopbackFallback: true }).then((fallbackAddr) => {
+              if (fallbackAddr) {
+                setScanAddr(fallbackAddr);
+                Logger.debug(`Domains page: Set scanAddr with localhost fallback: "${fallbackAddr}"`, 'Domains');
+              }
+            }).catch((error) => {
+              Logger.error('Failed to resolve suggested scan address (fallback)', 'Domains', error);
+            });
+          }
+        }).catch((error) => {
+          Logger.error('Failed to resolve suggested scan address', 'Domains', error);
+        });
+      } else {
+        Logger.debug(`Domains page: Using restored scanAddr: "${restoredAddr}"`, 'Domains');
+      }
+    } catch (error) {
+      Logger.error('Failed to hydrate scanner state from localStorage', 'Domains', error);
     } finally {
       setScanStateHydrated(true);
     }
-  }, []);
+  }, [resolveSuggestedScanAddr]);
 
   useEffect(() => {
     if (!scanStateHydrated) return;
@@ -246,8 +327,8 @@ export default function DomainsPage() {
           scanPanelExpanded,
         }),
       );
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      Logger.error('Failed to persist scanner state to localStorage', 'Domains', error);
     }
   }, [scanAddr, scanSeconds, scanThread, scanTimeout, scanResult, scanCandidates, scanPanelExpanded, scanStateHydrated]);
 
@@ -272,9 +353,9 @@ export default function DomainsPage() {
         const runIdToLoad = activeScanRunId || status.lastRunId;
         await fetchLastScanResult(runIdToLoad);
         setActiveScanRunId(null);
-      } catch (e) {
+      } catch (error) {
         if (!cancelled) {
-          console.error(e);
+          Logger.error('Failed to fetch scan status', 'Domains', error);
         }
       }
     };
@@ -285,7 +366,7 @@ export default function DomainsPage() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [isScanning, activeScanRunId]);
+  }, [isScanning, activeScanRunId, fetchScanStatus, fetchLastScanResult]);
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
@@ -298,23 +379,37 @@ export default function DomainsPage() {
 
   const handleAdd = async () => {
     if (!newDomain) return;
+    Logger.debug(`Adding domain: ${newDomain}`, 'Domains');
     await api.post('/domains', { name: newDomain });
+    Logger.debug(`Added domain: ${newDomain}`, 'Domains');
     setNewDomain('');
     loadDomains();
   };
 
   const handleDelete = async (id: number) => {
+    Logger.debug(`Deleting domain ID: ${id}`, 'Domains');
     await api.delete(`/domains/${id}`);
+    Logger.debug(`Deleted domain ID: ${id}`, 'Domains');
     loadDomains();
   };
 
   const handleDeleteAll = async () => {
-    if (confirm('ВНИМАНИЕ! Вы действительно хотите удалить ВСЕ домены из белого списка?')) {
-      try {
-        await api.delete('/domains/all');
-        loadDomains();
-      } catch (_e) { alert('Ошибка удаления'); }
-    }
+    setConfirmDialog({
+      open: true,
+      title: 'ВНИМАНИЕ! Вы действительно хотите удалить ВСЕ домены из белого списка?',
+      onConfirm: async () => {
+        try {
+          Logger.debug('Deleting all domains', 'Domains');
+          await api.delete('/domains/all');
+          Logger.debug('All domains deleted', 'Domains');
+          loadDomains();
+          setSnackbar({ open: true, type: 'success', message: 'Все домены удалены' });
+        } catch {
+          Logger.error('Delete all failed', 'Domains');
+          setSnackbar({ open: true, type: 'error', message: 'Ошибка удаления' });
+        }
+      }
+    });
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -330,10 +425,10 @@ export default function DomainsPage() {
 
       try {
         const { data } = await api.post('/domains/upload', { domains: lines });
-        alert(`Успешно добавлено доменов: ${data.count}`);
+        setSnackbar({ open: true, type: 'success', message: `Успешно добавлено доменов: ${data.count}` });
         loadDomains();
-      } catch (_err) {
-        alert('Ошибка при загрузке списка');
+      } catch {
+        setSnackbar({ open: true, type: 'error', message: 'Ошибка при загрузке списка' });
       } finally {
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
@@ -343,7 +438,7 @@ export default function DomainsPage() {
 
   const handleStartScan = async () => {
     if (!scanAddr.trim()) {
-      alert('Укажите IP/домен для сканирования');
+      setSnackbar({ open: true, type: 'error', message: 'Укажите IP/домен для сканирования' });
       return;
     }
 
@@ -353,6 +448,7 @@ export default function DomainsPage() {
     let keepScanning = false;
 
     try {
+      Logger.debug(`Starting scan: addr=${scanAddr.trim()}, seconds=${effectiveScanSeconds}, threads=${effectiveThread}, timeout=${effectiveTimeout}`, 'Scanner');
       setIsScanning(true);
       setScanError('');
       setScanResult(null);
@@ -366,15 +462,18 @@ export default function DomainsPage() {
         timeout: effectiveTimeout,
       });
 
+      Logger.debug(`Scan started: runId=${data.runId}, found=${data.foundCount}`, 'Scanner');
       setScanResult(data);
       setScanCandidates(data.domains || []);
       setActiveScanRunId(data.runId || null);
       await fetchScanStatus();
-    } catch (e: any) {
-      const message = e?.response?.data?.message || e?.message || 'Ошибка запуска сканера';
-      setScanError(Array.isArray(message) ? message.join('; ') : message);
+    } catch (e) {
+      const message = getApiErrorMessage(e, 'Ошибка запуска сканера');
+      Logger.error(`Start error: ${message}`, 'Scanner');
+      setScanError(message);
 
-      if (e?.response?.status === 429) {
+      const status = getApiErrorStatus(e);
+      if (status === 429) {
         try {
           const status = await fetchScanStatus();
           if (status.running) {
@@ -382,9 +481,10 @@ export default function DomainsPage() {
             setIsScanning(true);
             setActiveScanRunId(status.runId);
             setScanError('Скан уже выполняется. Подключились к текущему запуску.');
+            Logger.debug('Connected to existing scan session', 'Scanner');
           }
         } catch (statusErr) {
-          console.error(statusErr);
+          Logger.error('Failed to fetch scan status on 429', 'Scanner', statusErr);
         }
       }
     } finally {
@@ -400,11 +500,14 @@ export default function DomainsPage() {
     if (found.length === 0) return;
 
     try {
+      Logger.debug(`Importing ${found.length} scanned domains`, 'Domains');
       const { data } = await api.post('/domains/upload', { domains: found });
-      alert(`Скан завершен. Добавлено новых доменов: ${data.count}`);
+      Logger.debug(`Imported ${data.count} new domains`, 'Domains');
+      setSnackbar({ open: true, type: 'success', message: `Скан завершен. Добавлено новых доменов: ${data.count}` });
       loadDomains();
-    } catch (_e) {
-      alert('Ошибка импорта найденных доменов');
+    } catch {
+      Logger.error('Import failed', 'Domains');
+      setSnackbar({ open: true, type: 'error', message: 'Ошибка импорта найденных доменов' });
     }
   };
 
@@ -454,8 +557,8 @@ export default function DomainsPage() {
 
       if (names.length === 0) return;
       downloadDomainsAsTxt(`sni-whitelist-${getExportTimestamp()}.txt`, names);
-    } catch (_e) {
-      alert('Ошибка экспорта списка');
+    } catch {
+      setSnackbar({ open: true, type: 'error', message: 'Ошибка экспорта списка' });
     }
   };
 
@@ -723,6 +826,43 @@ export default function DomainsPage() {
           />
         </Paper>
       </Paper>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          severity={snackbar.type}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+
+      <Dialog open={confirmDialog.open} onClose={() => setConfirmDialog({ ...confirmDialog, open: false })}>
+        <DialogTitle>Подтверждение действия</DialogTitle>
+        <DialogContent>
+          <Typography>{confirmDialog.title}</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDialog({ ...confirmDialog, open: false })}>
+            Отмена
+          </Button>
+          <Button
+            onClick={() => {
+              setConfirmDialog({ ...confirmDialog, open: false });
+              confirmDialog.onConfirm();
+            }}
+            variant="contained"
+            color="error"
+          >
+            Удалить
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

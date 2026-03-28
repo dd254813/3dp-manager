@@ -8,7 +8,7 @@ export class DomainsService implements OnModuleInit {
   constructor(
     @InjectRepository(Domain)
     private repo: Repository<Domain>,
-  ) { }
+  ) {}
 
   async onModuleInit() {
     await this.seedDefaultDomains();
@@ -16,9 +16,8 @@ export class DomainsService implements OnModuleInit {
 
   private async seedDefaultDomains() {
     const count = await this.repo.count();
-    
+
     if (count === 0) {
-      
       const defaultDomains = [
         'ya.ru',
         'vk.com',
@@ -29,11 +28,11 @@ export class DomainsService implements OnModuleInit {
         'vkvideo.ru',
         'rutube.ru',
         'kinopoisk.ru',
-        'avito.ru'
+        'avito.ru',
       ];
 
-      const entities = defaultDomains.map(name => this.repo.create({ name }));
-      await this.repo.save(entities);     
+      const entities = defaultDomains.map((name) => this.repo.create({ name }));
+      await this.repo.save(entities);
     }
   }
 
@@ -93,14 +92,15 @@ export class DomainsService implements OnModuleInit {
       .filter((name): name is string => Boolean(name));
 
     const existing = await this.repo.find();
-    const existingSet = new Set(existing.map(d => d.name.toLowerCase()));
+    const existingSet = new Set(existing.map((d) => d.name.toLowerCase()));
 
-    const uniqueNewNames = [...new Set(cleanNames)]
-      .filter(name => !existingSet.has(name.toLowerCase()));
+    const uniqueNewNames = [...new Set(cleanNames)].filter(
+      (name) => !existingSet.has(name.toLowerCase()),
+    );
 
     if (uniqueNewNames.length === 0) return { count: 0 };
 
-    const entities = uniqueNewNames.map(name => this.repo.create({ name }));
+    const entities = uniqueNewNames.map((name) => this.repo.create({ name }));
     await this.repo.save(entities);
 
     return { count: entities.length };
@@ -134,7 +134,10 @@ export class DomainsService implements OnModuleInit {
     }
 
     // Wildcard entries are valid for input UX, but in whitelist storage we keep root form.
-    value = value.replace(/^\*+\./, '').replace(/^\.+/, '').replace(/\.+$/, '');
+    value = value
+      .replace(/^\*+\./, '')
+      .replace(/^\.+/, '')
+      .replace(/\.+$/, '');
     if (!value) return null;
 
     return this.isValidDomain(value) ? value : null;
@@ -147,10 +150,11 @@ export class DomainsService implements OnModuleInit {
     const parts = domain.split('.');
     if (parts.length < 2) return false;
 
-    return parts.every((part) =>
-      /^[a-z0-9-]{1,63}$/.test(part)
-      && !part.startsWith('-')
-      && !part.endsWith('-'),
+    return parts.every(
+      (part) =>
+        /^[a-z0-9-]{1,63}$/.test(part) &&
+        !part.startsWith('-') &&
+        !part.endsWith('-'),
     );
   }
 }

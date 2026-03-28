@@ -3,6 +3,9 @@ import { Box, Paper, TextField, Button, Typography, Alert, Chip } from '@mui/mat
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../auth/AuthContext';
+import { Logger } from '../utils/logger';
+import { getApiErrorMessage } from '../utils/errorHandlers';
+import { APP_VERSION } from '../utils/version';
 
 export default function LoginPage() {
   const [creds, setCreds] = useState({ login: '', password: '' });
@@ -12,11 +15,18 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    Logger.debug(`Form submit → POST /api/auth/login`, 'Login', { login: creds.login });
     try {
       const res = await api.post('/auth/login', creds);
-      login(res.data.access_token);
+
+      const token = res.data.access_token;
+      Logger.debug(`Success → token received, calling login()`, 'Login');
+      login(token);
+
       navigate('/');
-    } catch (e) {
+    } catch (error) {
+      const message = getApiErrorMessage(error, 'Неверный логин или пароль');
+      Logger.error(`Error: ${message}`, 'Login');
       setError('Неверный логин или пароль');
     }
   };
@@ -35,7 +45,7 @@ export default function LoginPage() {
         animation: 'fadeIn 1.5s ease-out',
         boxShadow: '0 15px 25px rgba(0,0,0,0.5)'
       }}>
-        <Typography variant="h5" gutterBottom align="center"><span style={{ verticalAlign: 'middle' }}>Вход в 3DP-MANAGER</span> <Chip label="v2.0.2" size="small" sx={{ verticalAlign: 'middle' }} /></Typography>
+        <Typography variant="h5" gutterBottom align="center"><span style={{ verticalAlign: 'middle' }}>Вход в 3DP-MANAGER</span> <Chip label={`v${APP_VERSION}`} size="small" sx={{ verticalAlign: 'middle' }} /></Typography>
 
 
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
