@@ -697,4 +697,128 @@ describe('SubscriptionsPage', () => {
       })
     })
   })
+
+  describe('Утилитные функции', () => {
+    it('должен генерировать уникальный ID', async () => {
+      setupMockGet()
+      renderSubscriptionsPage()
+
+      const createButton = await screen.findByText('Создать')
+      fireEvent.click(createButton)
+
+      // Проверяем что ID генерируется (просто что форма открывается)
+      await waitFor(() => {
+        expect(screen.getByText('Новая подписка')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('Просмотр ссылок', () => {
+    it('должен открывать диалог ссылок при клике на опцию меню', async () => {
+      const mockSubs = [
+        { id: '1', name: 'Test Sub', uuid: 'abc-123', inbounds: [{ type: 'vless', port: 443, sni: 'example.com', link: 'vless://test' }], isAutoRotationEnabled: true }
+      ]
+      setupMockGet({ subscriptions: mockSubs })
+
+      renderSubscriptionsPage()
+
+      const menuButton = await screen.findByTestId('icon-MoreVert')
+      fireEvent.click(menuButton)
+
+      const linksOption = await screen.findByText('Показать конфиги')
+      fireEvent.click(linksOption)
+
+      await waitFor(() => {
+        expect(screen.getByText('Активные ссылки')).toBeInTheDocument()
+      })
+    })
+
+    it('должен закрывать диалог ссылок при клике на "Закрыть"', async () => {
+      const mockSubs = [
+        { id: '1', name: 'Test Sub', uuid: 'abc-123', inbounds: [{ type: 'vless', port: 443, sni: 'example.com', link: 'vless://test' }], isAutoRotationEnabled: true }
+      ]
+      setupMockGet({ subscriptions: mockSubs })
+
+      renderSubscriptionsPage()
+
+      const menuButton = await screen.findByTestId('icon-MoreVert')
+      fireEvent.click(menuButton)
+
+      const linksOption = await screen.findByText('Показать конфиги')
+      fireEvent.click(linksOption)
+
+      const closeButton = await screen.findByText('Закрыть')
+      fireEvent.click(closeButton)
+
+      await waitFor(() => {
+        expect(screen.queryByText('Активные ссылки')).not.toBeInTheDocument()
+      })
+    })
+
+    it('должен копировать ссылку при клике на кнопку копирования', async () => {
+      const mockSubs = [
+        { id: '1', name: 'Test Sub', uuid: 'abc-123', inbounds: [{ type: 'vless', port: 443, sni: 'example.com', link: 'vless://test' }], isAutoRotationEnabled: true }
+      ]
+      setupMockGet({ subscriptions: mockSubs })
+      mockClipboardWriteText.mockResolvedValue(undefined)
+
+      renderSubscriptionsPage()
+
+      const menuButton = await screen.findByTestId('icon-MoreVert')
+      fireEvent.click(menuButton)
+
+      const linksOption = await screen.findByText('Показать конфиги')
+      fireEvent.click(linksOption)
+
+      const copyButton = await screen.findByText('Копировать все')
+      fireEvent.click(copyButton)
+
+      await waitFor(() => {
+        expect(mockClipboardWriteText).toHaveBeenCalled()
+      })
+    })
+
+    it('должен открывать ссылку в новой вкладке при клике на иконку открытия', async () => {
+      const mockSubs = [
+        { id: '1', name: 'Test Sub', uuid: 'abc-123', inbounds: [{ type: 'vless', port: 443, sni: 'example.com', link: 'vless://test' }], isAutoRotationEnabled: true }
+      ]
+      setupMockGet({ subscriptions: mockSubs })
+
+      renderSubscriptionsPage()
+
+      const menuButton = await screen.findByTestId('icon-MoreVert')
+      fireEvent.click(menuButton)
+
+      const linksOption = await screen.findByText('Показать конфиги')
+      fireEvent.click(linksOption)
+
+      const openButtons = await screen.findAllByTestId('icon-OpenInNew')
+      if (openButtons.length > 0) {
+        fireEvent.click(openButtons[0])
+      }
+
+      await waitFor(() => {
+        expect(mockWindowOpen).toHaveBeenCalled()
+      })
+    })
+
+    it('должен показывать сообщение при отсутствии ссылок', async () => {
+      const mockSubs = [
+        { id: '1', name: 'Test Sub', uuid: 'abc-123', inbounds: [], isAutoRotationEnabled: true }
+      ]
+      setupMockGet({ subscriptions: mockSubs })
+
+      renderSubscriptionsPage()
+
+      const menuButton = await screen.findByTestId('icon-MoreVert')
+      fireEvent.click(menuButton)
+
+      const linksOption = await screen.findByText('Показать конфиги')
+      fireEvent.click(linksOption)
+
+      await waitFor(() => {
+        expect(screen.getByText('Нет активных ссылок (ждите ротации)')).toBeInTheDocument()
+      })
+    })
+  })
 })

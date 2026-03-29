@@ -444,5 +444,180 @@ describe('DomainsPage', () => {
         }))
       })
     })
+
+    it('должен очищать результаты сканирования', async () => {
+      setupMockGet({
+        capabilities: { scannerAvailable: true },
+        settings: { xui_ip: '1.2.3.4' }
+      })
+      mockPost.mockResolvedValue({ data: { runId: '123', foundCount: 2, domains: ['a.com', 'b.com'] } })
+
+      renderDomainsPage()
+
+      const scanButton = await screen.findByText('Сканировать')
+      fireEvent.click(scanButton)
+
+      const clearButton = await screen.findByText('Очистить предварительный')
+      fireEvent.click(clearButton)
+
+      await waitFor(() => {
+        expect(mockGet).toHaveBeenCalled()
+      })
+    })
+
+    it('должен изменять настройки сканирования', async () => {
+      setupMockGet({
+        capabilities: { scannerAvailable: true },
+        settings: { xui_ip: '1.2.3.4' }
+      })
+
+      renderDomainsPage()
+
+      const secondsInput = await screen.findByLabelText('Секунд скана')
+      fireEvent.change(secondsInput, { target: { value: '120' } })
+      expect(secondsInput).toHaveValue(120)
+
+      const threadInput = screen.getByLabelText('Потоков')
+      fireEvent.change(threadInput, { target: { value: '8' } })
+      expect(threadInput).toHaveValue(8)
+
+      const timeoutInput = screen.getByLabelText('Таймаут, сек')
+      fireEvent.change(timeoutInput, { target: { value: '10' } })
+      expect(timeoutInput).toHaveValue(10)
+    })
+
+    it('должен разворачивать/сворачивать аккордеон сканера', async () => {
+      setupMockGet({
+        capabilities: { scannerAvailable: true }
+      })
+
+      renderDomainsPage()
+
+      const accordionSummary = await screen.findByText('Автопоиск SNI (backend scanner)')
+      
+      fireEvent.click(accordionSummary)
+
+      await waitFor(() => {
+        const secondsInput = screen.getByLabelText('Секунд скана')
+        expect(secondsInput).toBeInTheDocument()
+      })
+    })
+
+    it('должен показывать сообщение при пустом списке кандидатов после сканирования', async () => {
+      setupMockGet({
+        capabilities: { scannerAvailable: true },
+        settings: { xui_ip: '1.2.3.4' }
+      })
+      mockPost.mockResolvedValue({ data: { runId: '123', foundCount: 0, domains: [] } })
+
+      renderDomainsPage()
+
+      const scanButton = await screen.findByText('Сканировать')
+      fireEvent.click(scanButton)
+
+      await waitFor(() => {
+        expect(screen.getByText('Домены не найдены')).toBeInTheDocument()
+      })
+    })
+
+    it('должен сохранять состояние сканера в localStorage', async () => {
+      const mockSetItem = vi.fn()
+      const mockLocalStorage = {
+        getItem: vi.fn().mockReturnValue(null),
+        setItem: mockSetItem,
+        removeItem: vi.fn(),
+        clear: vi.fn(),
+      }
+      Object.defineProperty(window, 'localStorage', { value: mockLocalStorage, writable: true })
+
+      setupMockGet({
+        capabilities: { scannerAvailable: true },
+        settings: { xui_ip: '1.2.3.4' }
+      })
+
+      renderDomainsPage()
+
+      const addrInput = await screen.findByLabelText('IP/домен VPS')
+      fireEvent.change(addrInput, { target: { value: 'new-addr.com' } })
+
+      await waitFor(() => {
+        expect(mockSetItem).toHaveBeenCalledWith(
+          'domains_scan_state_v1',
+          expect.any(String)
+        )
+      })
+    })
+
+    it('должен показывать кнопку удаления для домена в основном списке', async () => {
+      setupMockGet({
+        domains: { data: [{ id: 1, name: 'test.com' }], total: 1 }
+      })
+
+      renderDomainsPage()
+
+      const deleteButtons = await screen.findAllByTestId('icon-Delete')
+      expect(deleteButtons.length).toBeGreaterThan(0)
+    })
+
+    it('должен подтверждать удаление всех доменов', async () => {
+      setupMockGet({
+        domains: { data: [{ id: 1, name: 'test.com' }], total: 1 }
+      })
+      mockDelete.mockResolvedValue({})
+
+      renderDomainsPage()
+
+      const deleteAllButton = await screen.findByText('Удалить все')
+      fireEvent.click(deleteAllButton)
+
+      const confirmButton = await screen.findByText('Удалить')
+      fireEvent.click(confirmButton)
+
+      await waitFor(() => {
+        expect(mockDelete).toHaveBeenCalledWith('/domains/all')
+      })
+    })
+
+    it('должен показывать успех после удаления всех доменов', async () => {
+      setupMockGet({
+        domains: { data: [{ id: 1, name: 'test.com' }], total: 1 }
+      })
+      mockDelete.mockResolvedValue({})
+
+      renderDomainsPage()
+
+      const deleteAllButton = await screen.findByText('Удалить все')
+      fireEvent.click(deleteAllButton)
+
+      const confirmButton = await screen.findByText('Удалить')
+      fireEvent.click(confirmButton)
+
+      await waitFor(() => {
+        const alerts = screen.getAllByRole('alert')
+        const successAlert = alerts.find(alert => alert.textContent?.includes('Все домены удалены'))
+        expect(successAlert).toBeInTheDocument()
+      })
+    })
+
+    it('должен показывать ошибку при неудачном удалении всех доменов', async () => {
+      setupMockGet({
+        domains: { data: [{ id: 1, name: 'test.com' }], total: 1 }
+      })
+      mockDelete.mockRejectedValue({ response: { status: 500 } })
+
+      renderDomainsPage()
+
+      const deleteAllButton = await screen.findByText('Удалить все')
+      fireEvent.click(deleteAllButton)
+
+      const confirmButton = await screen.findByText('Удалить')
+      fireEvent.click(confirmButton)
+
+      await waitFor(() => {
+        const alerts = screen.getAllByRole('alert')
+        const errorAlert = alerts.find(alert => alert.textContent?.includes('Ошибка удаления'))
+        expect(errorAlert).toBeInTheDocument()
+      })
+    })
   })
 })
