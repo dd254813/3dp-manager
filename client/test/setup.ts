@@ -112,7 +112,7 @@ vi.mock('@mui/icons-material', async () => {
     'Circle', 'NavigateNext', 'NavigateBefore', 'ChevronRight', 'ChevronLeft',
     'ExpandMore', 'ExpandLess', 'UnfoldMore', 'UnfoldLess', 'ArrowRight', 'ArrowLeft',
     'ArrowBack', 'ArrowForward', 'ArrowDropDown', 'ArrowDropUp', 'Expand',
-    'FileDownload', 'FileUpload', 'Attachment', 'Link', 'InsertLink', 'Photo',
+    'FileDownload', 'FileUpload', 'UploadFile', 'Download', 'Attachment', 'Link', 'InsertLink', 'Photo',
     'Image', 'PictureAsPdf', 'ImageIcon', 'CameraAlt', 'Videocam', 'Movie',
     'MusicNote', 'Mic', 'VolumeUp', 'VolumeOff', 'Headset', 'Headphones', 'Speaker',
     'Radio', 'Podcasts', 'Tv', 'DesktopWindows', 'Laptop', 'Computer', 'Tablet',

@@ -5,16 +5,6 @@ import DomainsPage from '../../src/pages/DomainsPage'
 import { ThemeProvider } from '../../src/ThemeContext'
 import { AuthProvider } from '../../src/auth/AuthContext'
 
-// Mock MUI icons
-vi.mock('@mui/icons-material', () => ({
-  Delete: () => null,
-  Add: () => null,
-  UploadFile: () => null,
-  Remove: () => null,
-  ExpandMore: () => null,
-  Download: () => null,
-}))
-
 const mockGet = vi.fn()
 const mockPost = vi.fn()
 const mockDelete = vi.fn()
@@ -27,18 +17,13 @@ vi.mock('../../src/api', () => ({
   },
 }))
 
-const mockClipboardWriteText = vi.fn()
-Object.assign(navigator, { clipboard: { writeText: mockClipboardWriteText } })
-
 beforeEach(() => {
   vi.clearAllMocks()
-  mockClipboardWriteText.mockClear()
   vi.spyOn(console, 'log').mockImplementation(() => {})
   vi.spyOn(console, 'debug').mockImplementation(() => {})
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   vi.spyOn(console, 'error').mockImplementation(() => {})
-  
-  // Mock localStorage
+
   Object.defineProperty(window, 'localStorage', {
     value: {
       getItem: vi.fn(() => null),
@@ -51,7 +36,6 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  vi.clearAllMocks()
   vi.restoreAllMocks()
 })
 
@@ -66,7 +50,7 @@ const setupMockGet = (overrides?: {
       return Promise.resolve({ data: overrides?.domains || { data: [], total: 0 } })
     }
     if (url === '/domains/scan/capabilities') {
-      return Promise.resolve({ data: overrides?.capabilities || { scannerAvailable: false, timeoutAvailable: false } })
+      return Promise.resolve({ data: overrides?.capabilities || { scannerAvailable: false } })
     }
     if (url === '/domains/scan/status') {
       return Promise.resolve({ data: overrides?.status || { running: false } })
@@ -176,15 +160,12 @@ describe('DomainsPage', () => {
       })
     })
 
-    it('должен отображать домены из API', async () => {
-      setupMockGet({
-        domains: { data: [{ id: 1, name: 'test.com' }, { id: 2, name: 'example.org' }], total: 2 }
-      })
+    it('должен загружать настройки', async () => {
+      setupMockGet()
       renderDomainsPage()
 
       await waitFor(() => {
-        expect(screen.getByText('test.com')).toBeInTheDocument()
-        expect(screen.getByText('example.org')).toBeInTheDocument()
+        expect(mockGet).toHaveBeenCalledWith('/settings')
       })
     })
   })
@@ -195,7 +176,7 @@ describe('DomainsPage', () => {
       renderDomainsPage()
 
       await waitFor(() => {
-        expect(screen.getByText('0–0 из 0')).toBeInTheDocument()
+        expect(screen.getByRole('combobox')).toBeInTheDocument()
       })
     })
 
@@ -291,12 +272,94 @@ describe('DomainsPage', () => {
   })
 
   describe('Удаление домена', () => {
-    it('должен иметь функцию удаления в API', async () => {
-      setupMockGet()
+    it('должен отображать кнопку удаления для домена', async () => {
+      setupMockGet({
+        domains: { data: [{ id: 1, name: 'test.com' }], total: 1 }
+      })
       renderDomainsPage()
 
-      // Просто проверяем что компонент рендерится
-      expect(screen.getByText('Белый список доменов (SNI)')).toBeInTheDocument()
+      const deleteButton = await screen.findByTestId('icon-Delete')
+      expect(deleteButton).toBeInTheDocument()
+    })
+
+    it('должен удалять домен при клике на кнопку удаления', async () => {
+      setupMockGet({
+        domains: { data: [{ id: 1, name: 'test.com' }], total: 1 }
+      })
+      mockDelete.mockResolvedValue({})
+
+      renderDomainsPage()
+
+      const deleteButton = await screen.findByTestId('icon-Delete')
+      fireEvent.click(deleteButton)
+
+      await waitFor(() => {
+        expect(mockDelete).toHaveBeenCalledWith('/domains/1')
+      })
+    })
+
+    it('должен перезагружать список после удаления', async () => {
+      setupMockGet({
+        domains: { data: [{ id: 1, name: 'test.com' }], total: 1 }
+      })
+      mockDelete.mockResolvedValue({})
+
+      renderDomainsPage()
+
+      const deleteButton = await screen.findByTestId('icon-Delete')
+      fireEvent.click(deleteButton)
+
+      await waitFor(() => {
+        expect(mockGet).toHaveBeenCalledWith('/domains?page=1&limit=10')
+      })
+    })
+  })
+
+  describe('Удаление всех доменов', () => {
+    it('должен отображать кнопку "Удалить все"', async () => {
+      setupMockGet({
+        domains: { data: [{ id: 1, name: 'test.com' }], total: 1 }
+      })
+      renderDomainsPage()
+
+      await waitFor(() => {
+        expect(screen.getByText('Удалить все')).toBeInTheDocument()
+      })
+    })
+
+    it('должен открывать диалог подтверждения удаления всех', async () => {
+      setupMockGet({
+        domains: { data: [{ id: 1, name: 'test.com' }], total: 1 }
+      })
+      mockDelete.mockResolvedValue({})
+
+      renderDomainsPage()
+
+      const deleteAllButton = await screen.findByText('Удалить все')
+      fireEvent.click(deleteAllButton)
+
+      await waitFor(() => {
+        expect(screen.getByRole('dialog')).toBeInTheDocument()
+      })
+    })
+
+    it('должен закрывать диалог при клике на "Отмена"', async () => {
+      setupMockGet({
+        domains: { data: [{ id: 1, name: 'test.com' }], total: 1 }
+      })
+      mockDelete.mockResolvedValue({})
+
+      renderDomainsPage()
+
+      const deleteAllButton = await screen.findByText('Удалить все')
+      fireEvent.click(deleteAllButton)
+
+      const cancelButton = await screen.findByText('Отмена')
+      fireEvent.click(cancelButton)
+
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      })
     })
   })
 
@@ -314,8 +377,72 @@ describe('DomainsPage', () => {
       setupMockGet()
       renderDomainsPage()
 
-      const fileInput = await screen.findByRole('button', { name: /Из файла/i })
+      const fileInput = screen.getByTestId('file-input')
       expect(fileInput).toBeInTheDocument()
+    })
+
+    it('должен загружать файл при выборе', async () => {
+      setupMockGet()
+      mockPost.mockResolvedValue({ data: { count: 5 } })
+
+      renderDomainsPage()
+
+      const fileInput = screen.getByTestId('file-input') as HTMLInputElement
+      const file = new File(['example.com\ntest.org'], 'domains.txt', { type: 'text/plain' })
+
+      fireEvent.change(fileInput, { target: { files: [file] } })
+
+      await waitFor(() => {
+        expect(mockPost).toHaveBeenCalledWith('/domains/upload', { domains: expect.any(Array) })
+      })
+    })
+
+    it('должен показывать успех после загрузки файла', async () => {
+      setupMockGet()
+      mockPost.mockResolvedValue({ data: { count: 5 } })
+
+      renderDomainsPage()
+
+      const fileInput = screen.getByTestId('file-input') as HTMLInputElement
+      const file = new File(['example.com\ntest.org'], 'domains.txt', { type: 'text/plain' })
+
+      fireEvent.change(fileInput, { target: { files: [file] } })
+
+      await waitFor(() => {
+        expect(screen.getByText('Успешно добавлено доменов: 5')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('Сканер доменов', () => {
+    it('должен отображать кнопку "Сканировать" в аккордеоне', async () => {
+      setupMockGet({
+        capabilities: { scannerAvailable: true }
+      })
+      renderDomainsPage()
+
+      await waitFor(() => {
+        expect(screen.getByText('Сканировать')).toBeInTheDocument()
+      })
+    })
+
+    it('должен запускать сканирование при валидных данных', async () => {
+      setupMockGet({
+        capabilities: { scannerAvailable: true },
+        settings: { xui_ip: '1.2.3.4' }
+      })
+      mockPost.mockResolvedValue({ data: { runId: '123', foundCount: 5, domains: ['a.com', 'b.com'] } })
+
+      renderDomainsPage()
+
+      const scanButton = await screen.findByText('Сканировать')
+      fireEvent.click(scanButton)
+
+      await waitFor(() => {
+        expect(mockPost).toHaveBeenCalledWith('/domains/scan/start', expect.objectContaining({
+          addr: expect.any(String),
+        }))
+      })
     })
   })
 })

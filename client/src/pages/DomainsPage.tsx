@@ -758,6 +758,7 @@ export default function DomainsPage() {
           <input
             type="file"
             accept=".txt"
+            data-testid="file-input"
             ref={fileInputRef}
             style={{ display: 'none' }}
             onChange={handleFileUpload}
