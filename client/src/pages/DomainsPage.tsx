@@ -349,7 +349,9 @@ export default function DomainsPage() {
           return;
         }
 
+        // Скан завершён — очищаем ошибку и загружаем результаты
         setIsScanning(false);
+        setScanError('');
         const runIdToLoad = activeScanRunId || status.lastRunId;
         await fetchLastScanResult(runIdToLoad);
         setActiveScanRunId(null);
