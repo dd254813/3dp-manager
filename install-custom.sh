@@ -236,51 +236,46 @@ else
 fi
 
 #################################
-# СБОР ДАННЫХ
+# СБОР ДАННЫХ: SSL / HTTPS
 #################################
-read -rp "Введите домен сервера (Enter = использовать IP): " INPUT_HOST
-
+UI_HOST=""
 USE_SSL=false
 CERT_PATH=""
 KEY_PATH=""
 
-if [ -z "$INPUT_HOST" ]; then
-  UI_HOST=$(hostname -I | awk '{print $1}')
-  log "Домен не указан. Будет использоваться IP: $UI_HOST"
-else
-  UI_HOST=$INPUT_HOST
-fi
+echo ""
+echo "Выберите тип SSL/HTTPS сертификации:"
+echo "  1) HTTPS — Let's Encrypt (нужен реальный домен, привязанный к IP, + открыты порты 80/443 в UFW)"
+echo "  2) HTTPS — Self-signed (самоподписанный на IP сервера, для тестов/VM)"
+echo "  3) HTTPS — Свои сертификаты (указать пути)"
+echo "  4) HTTP — без шифрования"
+echo ""
+read -rp "Ваш выбор (1/2/3/4) [4]: " ssl_choice
 
-# Настройка SSL
-LE_CERT="/etc/letsencrypt/live/$UI_HOST/fullchain.pem"
-LE_KEY="/etc/letsencrypt/live/$UI_HOST/privkey.pem"
+case "$ssl_choice" in
+  1)
+    echo ""
+    read -rp "Введите домен (должен быть привязан к IP этого сервера): " INPUT_HOST
 
-if [[ -f "$LE_CERT" && -f "$LE_KEY" ]]; then
-  log "Найдены существующие сертификаты для $UI_HOST."
-  USE_SSL=true
-  CERT_PATH="$LE_CERT"
-  KEY_PATH="$LE_KEY"
-else
-  echo ""
-  echo "Выберите тип подключения:"
-  echo "  1) HTTPS — Let's Encrypt (нужен реальный домен, порты 80/443)"
-  echo "  2) HTTPS — Self-signed (самоподписанный, для тестов/VM)"
-  echo "  3) HTTPS — Свои сертификаты (указать пути)"
-  echo "  4) HTTP — без шифрования"
-  echo ""
-  read -rp "Ваш выбор (1/2/3/4) [4]: " ssl_choice
+    if [ -z "$INPUT_HOST" ]; then
+      warn "Домен не указан. Переключение на HTTP."
+    else
+      UI_HOST="$INPUT_HOST"
+      LE_CERT="/etc/letsencrypt/live/$UI_HOST/fullchain.pem"
+      LE_KEY="/etc/letsencrypt/live/$UI_HOST/privkey.pem"
 
-  case "$ssl_choice" in
-    1)
-      if [[ "$UI_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        warn "Let's Encrypt не работает с IP-адресами. Переключение на HTTP."
+      if [[ -f "$LE_CERT" && -f "$LE_KEY" ]]; then
+        log "Найдены существующие сертификаты для $UI_HOST."
+        USE_SSL=true
+        CERT_PATH="$LE_CERT"
+        KEY_PATH="$LE_KEY"
       else
         log "Получение Let's Encrypt сертификата для $UI_HOST..."
-        read -e -p "Email для Let's Encrypt уведомлений: " LE_EMAIL
+        read -e -p "Email для уведомлений Let's Encrypt: " LE_EMAIL
         LE_EMAIL=$(echo "$LE_EMAIL" | tr -cd 'a-zA-Z0-9.@_-')
 
         if command -v certbot &>/dev/null; then
-          log "Certbot уже установлен, получаем сертификат..."
+          log "Certbot уже установлен."
         else
           log "Установка certbot..."
           apt update
@@ -302,47 +297,58 @@ else
           warn "Сертификат не получен. Переключение на HTTP."
         fi
       fi
-      ;;
+    fi
+    ;;
 
-    2)
-      log "Генерация самоподписанного сертификата для $UI_HOST..."
-      mkdir -p "/etc/letsencrypt/live/$UI_HOST"
-      openssl req -x509 -nodes -days 365 \
-        -newkey rsa:2048 \
-        -keyout "/etc/letsencrypt/live/$UI_HOST/privkey.pem" \
-        -out "/etc/letsencrypt/live/$UI_HOST/fullchain.pem" \
-        -subj "/CN=$UI_HOST" \
-        -addext "subjectAltName=DNS:$UI_HOST,IP:$UI_HOST" 2>/dev/null
+  2)
+    UI_HOST=$(hostname -I | awk '{print $1}')
+    log "Генерация самоподписанного сертификата для $UI_HOST..."
+    mkdir -p "/etc/letsencrypt/live/$UI_HOST"
+    openssl req -x509 -nodes -days 365 \
+      -newkey rsa:2048 \
+      -keyout "/etc/letsencrypt/live/$UI_HOST/privkey.pem" \
+      -out "/etc/letsencrypt/live/$UI_HOST/fullchain.pem" \
+      -subj "/CN=$UI_HOST" \
+      -addext "subjectAltName=IP:$UI_HOST" 2>/dev/null
 
-      if [[ -f "$LE_CERT" && -f "$LE_KEY" ]]; then
-        USE_SSL=true
-        CERT_PATH="$LE_CERT"
-        KEY_PATH="$LE_KEY"
-        log "Self-signed сертификат сгенерирован для $UI_HOST"
-        warn "Браузер будет предупреждать о небезопасном соединении — это нормально для тестов."
-      else
-        warn "Не удалось сгенерировать сертификат. Переключение на HTTP."
-      fi
-      ;;
+    if [[ -f "/etc/letsencrypt/live/$UI_HOST/fullchain.pem" && -f "/etc/letsencrypt/live/$UI_HOST/privkey.pem" ]]; then
+      USE_SSL=true
+      CERT_PATH="/etc/letsencrypt/live/$UI_HOST/fullchain.pem"
+      KEY_PATH="/etc/letsencrypt/live/$UI_HOST/privkey.pem"
+      log "Self-signed сертификат сгенерирован для $UI_HOST"
+      warn "Браузер будет предупреждать — это нормально для тестов."
+    else
+      warn "Не удалось сгенерировать сертификат. Переключение на HTTP."
+    fi
+    ;;
 
-    3)
-      read -rp "Путь к fullchain.pem: " user_cert
-      read -rp "Путь к privkey.pem: " user_key
-      if [[ -f "$user_cert" && -f "$user_key" ]]; then
-        USE_SSL=true
-        CERT_PATH="$user_cert"
-        KEY_PATH="$user_key"
-      else
-        warn "Файлы сертификатов не найдены. Будет использоваться HTTP."
-      fi
-      ;;
+  3)
+    read -rp "Путь к fullchain.pem: " user_cert
+    read -rp "Путь к privkey.pem: " user_key
+    if [[ -f "$user_cert" && -f "$user_key" ]]; then
+      USE_SSL=true
+      CERT_PATH="$user_cert"
+      KEY_PATH="$user_key"
+      UI_HOST=$(hostname -I | awk '{print $1}')
+    else
+      warn "Файлы не найдены. Переключение на HTTP."
+    fi
+    ;;
 
-    *)
-      log "Будет использоваться HTTP."
-      ;;
-  esac
+  *)
+    UI_HOST=$(hostname -I | awk '{print $1}')
+    log "Будет использоваться HTTP."
+    ;;
+esac
+
+if [ -z "$UI_HOST" ]; then
+  UI_HOST=$(hostname -I | awk '{print $1}')
+  log "Используется IP сервера: $UI_HOST"
 fi
 
+#################################
+# СБОР ДАННЫХ: порты и пароли
+#################################
 FINAL_PORT=$(get_random_port)
 
 # Генерация паролей
