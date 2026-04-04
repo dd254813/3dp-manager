@@ -386,22 +386,6 @@ server {
         proxy_read_timeout 650s;
     }
 }
-server {
-    listen 3100 ssl;
-    server_name $UI_HOST;
-    client_max_body_size 50M;
-
-    ssl_certificate /etc/nginx/certs/fullchain.pem;
-    ssl_certificate_key /etc/nginx/certs/privkey.pem;
-
-    location / {
-        proxy_pass http://backend:3100/;
-        proxy_set_header Host \$http_host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto https;
-    }
-}
 EOF
 
     # 2. Docker Compose
@@ -455,7 +439,6 @@ services:
       - backend
     ports:
       - "${FINAL_PORT}:443"
-      - "3100:3100"
     volumes:
       - ./client/nginx-client.conf:/etc/nginx/conf.d/default.conf:ro
       - ${CERT_PATH}:/etc/nginx/certs/fullchain.pem:ro
@@ -513,14 +496,6 @@ server {
         proxy_read_timeout 650s;
     }
 }
-server {
-    listen 3100;
-    server_name localhost;
-    location / {
-        proxy_pass http://backend:3100/;
-        proxy_set_header Host \$http_host;
-    }
-}
 EOF
 
     # 2. Docker Compose
@@ -574,7 +549,6 @@ services:
       - backend
     ports:
       - "${FINAL_PORT}:80"
-      - "3100:3100"
     volumes:
       - ./client/nginx-client.conf:/etc/nginx/conf.d/default.conf:ro
     networks:

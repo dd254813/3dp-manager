@@ -337,21 +337,6 @@ else
 fi
 
 #################################
-# UPDATE DOCKER-COMPOSE FROM REPO
-#################################
-log "Обновление docker-compose.yml из ветки $BRANCH..."
-curl -fsSL "${REPO_URL%.git}/raw/branch/$BRANCH/docker-compose.yml" \
-  -o "$PROJECT_DIR/docker-compose.yml" 2>/dev/null || {
-  # Fallback: скачиваем через raw.githubusercontent.com
-  if [[ "$REPO_URL" =~ ^https://github\.com/([^/]+)/([^/]+?)(\.git)?$ ]]; then
-    curl -fsSL "https://raw.githubusercontent.com/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/$BRANCH/docker-compose.yml" \
-      -o "$PROJECT_DIR/docker-compose.yml" || die "Не удалось скачать docker-compose.yml"
-  else
-    die "Не удалось скачать docker-compose.yml из $REPO_URL"
-  fi
-}
-
-#################################
 # CREATE COMPOSE OVERRIDE
 #################################
 COMPOSE_OVERRIDE="$PROJECT_DIR/docker-compose.custom.yml"
