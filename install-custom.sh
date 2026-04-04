@@ -357,11 +357,11 @@ JWT_SECRET=$(openssl rand -base64 32)
 ADMIN_USER=$(openssl rand -base64 8 | tr -dc 'A-Za-z0-9' | cut -c1-8)
 ADMIN_PASS=$(openssl rand -base64 12 | tr -dc 'A-Za-z0-9' | cut -c1-12)
 
-# ALLOWED_ORIGINS
-if [[ "$UI_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  ALLOWED_ORIGINS="http://${UI_HOST}:${FINAL_PORT}"
-else
+# ALLOWED_ORIGINS — зависит от USE_SSL, а не от формата хоста
+if [[ "$USE_SSL" == "true" ]]; then
   ALLOWED_ORIGINS="https://${UI_HOST}:${FINAL_PORT}"
+else
+  ALLOWED_ORIGINS="http://${UI_HOST}:${FINAL_PORT}"
 fi
 
 log "Сгенерированы секретные ключи для БД и JWT."
