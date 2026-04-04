@@ -81,10 +81,14 @@ const patchLink = function (link: string, newHost: string): string {
 const generateId = () => Math.random().toString(36).substring(7);
 
 const getSubscriptionUrl = (uuid: string, tunnelId: string | number) => {
-  // Поскольку Nginx/Vite Proxy не используется, направляем запросы /bus/ жестко на порт 3000 бэкенда
-  const baseUrl = `${window.location.protocol}//${window.location.hostname}:3000`;
+  // Используем относительный путь - Nginx проксирует /bus/ на бэкенд
   const tunnelPart = tunnelId !== 'main' ? `/${tunnelId}` : '';
-  return `${baseUrl}/bus/${uuid}${tunnelPart}`;
+  const path = `/bus/${uuid}${tunnelPart}`;
+  // Для копирования нужен полный URL с origin
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}${path}`;
+  }
+  return path;
 };
 
 export default function SubscriptionsPage() {
