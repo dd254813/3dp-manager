@@ -31,7 +31,7 @@ import { SessionModule } from './session/session.module';
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
-        limit: 5,
+        limit: 1000,
       },
     ]),
     TypeOrmModule.forRoot({

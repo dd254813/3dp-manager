@@ -10,6 +10,7 @@ import {
   Query,
   Logger,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { Response, Request } from 'express';
@@ -34,6 +35,7 @@ export class ClientController {
   ) {}
 
   @Public()
+  @Throttle({ default: { limit: 300, ttl: 60000 } })
   @Get('bus/:uuid')
   async getSubscription(
     @Param('uuid') uuid: string,
@@ -92,6 +94,7 @@ export class ClientController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 300, ttl: 60000 } })
   @Get('bus/:uuid/:tunnelId')
   async getRelaySubscription(
     @Param('uuid') uuid: string,

@@ -28,7 +28,7 @@ describe('AppModule конфигурация', () => {
     delete process.env.JWT_SECRET;
   });
 
-  it('должен регистрировать ThrottlerModule с лимитом 5/60000ms', () => {
+  it('должен регистрировать ThrottlerModule с лимитом 1000/60000ms (лояльный API)', () => {
     const imports = (Reflect.getMetadata(MODULE_METADATA.IMPORTS, AppModule) ??
       []) as DynamicModuleLike[];
     const throttlerDynamicModule = imports.find(
@@ -43,7 +43,7 @@ describe('AppModule конфигурация', () => {
     expect(throttlerOptionsProvider?.useValue).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          limit: 5,
+          limit: 1000,
           ttl: 60000,
         }),
       ]),
