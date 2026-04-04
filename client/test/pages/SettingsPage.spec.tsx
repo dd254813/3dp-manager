@@ -380,10 +380,10 @@ describe('SettingsPage', () => {
       
       const rotateButton = await screen.findByText('Сгенерировать сейчас')
       fireEvent.click(rotateButton)
-      
-      const confirmButton = await screen.findByText('Продолжить')
+
+      const confirmButton = await screen.findByText('Сгенерировать')
       fireEvent.click(confirmButton)
-      
+
       await waitFor(() => {
         expect(mockPost).toHaveBeenCalledWith('/rotation/rotate-all')
       })
@@ -462,9 +462,9 @@ describe('SettingsPage', () => {
       const refreshButton = await screen.findByRole('button', { name: /Обновить подписку вручную/i })
       fireEvent.click(refreshButton)
       
-      const confirmButton = await screen.findByText('Продолжить')
+      const confirmButton = await screen.findByText('Обновить')
       fireEvent.click(confirmButton)
-      
+
       await waitFor(() => {
         expect(mockPost).toHaveBeenCalledWith('/rotation/rotate-one/1')
       })

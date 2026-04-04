@@ -36,7 +36,10 @@ export default function SettingsPage() {
 
   const [msg, setMsg] = useState({ open: false, type: 'success' as 'success' | 'error', text: '' });
   const [loadingRotate, setLoadingRotate] = useState<boolean>(false);
-  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', onConfirm: () => {} });
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false, title: '', onConfirm: () => {},
+    confirmText: 'Удалить', confirmColor: 'error' as 'error' | 'primary'
+  });
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
@@ -215,6 +218,8 @@ export default function SettingsPage() {
     setConfirmDialog({
       open: true,
       title: 'ВНИМАНИЕ: Это немедленно обновит конфиги в подписках.\n\nИнтервал автоматической ротации НЕ будет сброшен.\n\nПродолжить?',
+      confirmText: 'Сгенерировать',
+      confirmColor: 'primary',
       onConfirm: async () => {
         try {
           Logger.debug('Starting forced rotation', 'Rotation');
@@ -268,6 +273,8 @@ export default function SettingsPage() {
     setConfirmDialog({
       open: true,
       title: `Обновить подписку "${sub.name}" сейчас?`,
+      confirmText: 'Обновить',
+      confirmColor: 'primary',
       onConfirm: async () => {
         try {
           Logger.debug(`Starting manual rotation for subscription: ${sub.id}`, 'Settings');
@@ -597,9 +604,9 @@ export default function SettingsPage() {
               confirmDialog.onConfirm();
             }}
             variant="contained"
-            color="warning"
+            color={confirmDialog.confirmColor}
           >
-            Продолжить
+            {confirmDialog.confirmText}
           </Button>
         </DialogActions>
       </Dialog>

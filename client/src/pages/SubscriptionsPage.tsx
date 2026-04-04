@@ -116,7 +116,10 @@ export default function SubscriptionsPage() {
   const [snackbar, setSnackbar] = useState({ open: false, type: 'success' as 'success' | 'error', message: '' });
 
   // Confirmation dialog state
-  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', onConfirm: () => {} });
+  const [confirmDialog, setConfirmDialog] = useState({
+    open: false, title: '', onConfirm: () => {},
+    confirmText: 'Удалить', confirmColor: 'error' as 'error' | 'primary'
+  });
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -276,6 +279,8 @@ export default function SubscriptionsPage() {
     setConfirmDialog({
       open: true,
       title: 'Удалить подписку и все соединения?',
+      confirmText: 'Удалить',
+      confirmColor: 'error',
       onConfirm: async () => {
         Logger.debug(`Deleting subscription: ${id}`, 'Subs');
         await api.delete(`/subscriptions/${id}`);
@@ -312,6 +317,8 @@ export default function SubscriptionsPage() {
     setConfirmDialog({
       open: true,
       title: `Обновить подписку "${sub.name}" сейчас?`,
+      confirmText: 'Обновить',
+      confirmColor: 'primary',
       onConfirm: async () => {
         try {
           Logger.debug(`Starting manual rotation for subscription: ${sub.id}`, 'Subs');
@@ -622,9 +629,9 @@ export default function SubscriptionsPage() {
               setConfirmDialog({ ...confirmDialog, open: false });
             }}
             variant="contained"
-            color="error"
+            color={confirmDialog.confirmColor}
           >
-            Удалить
+            {confirmDialog.confirmText}
           </Button>
         </DialogActions>
       </Dialog>
