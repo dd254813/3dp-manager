@@ -220,11 +220,10 @@ case "$ssl_choice" in
       LE_CERT="/etc/letsencrypt/live/$UI_HOST/fullchain.pem"
       LE_KEY="/etc/letsencrypt/live/$UI_HOST/privkey.pem"
 
-      # Флаг для понимания, нужно ли запрашивать сертификат
       NEED_NEW_CERT=true
 
       if [[ -f "$LE_CERT" && -f "$LE_KEY" ]]; then
-        # Проверяем что сертификат не истёк и ключ соответствует (универсально для RSA и ECDSA)
+        # Проверяем что сертификат не истёк и ключ соответствует
         if openssl x509 -checkend 0 -noout -in "$LE_CERT" 2>/dev/null && \
            openssl x509 -noout -pubkey -in "$LE_CERT" 2>/dev/null > /tmp/cert_pub && \
            openssl pkey -pubout -in "$LE_KEY" 2>/dev/null > /tmp/key_pub && \
@@ -236,15 +235,14 @@ case "$ssl_choice" in
           KEY_PATH="$LE_KEY"
           NEED_NEW_CERT=false
         else
-          warn "Найдены сертификаты для $UI_HOST, но они истекли или невалидны. Обновляем через certbot..."
-          # Удаляем невалидные файлы, чтобы certbot не ругался при перевыпуске
+          warn "Найдены сертификаты для $UI_HOST, но они истекли или невалидны. Очистка..."
+          # Удаляем невалидные файлы
           rm -rf "/etc/letsencrypt/live/$UI_HOST"
           rm -rf "/etc/letsencrypt/archive/$UI_HOST"
           rm -rf "/etc/letsencrypt/renewal/$UI_HOST.conf"
         fi
       fi
 
-      # Если сертификатов не было или они оказались невалидными
       if [ "$NEED_NEW_CERT" = true ]; then
         log "Получение Let's Encrypt сертификата для $UI_HOST..."
         read -e -p "Email для уведомлений Let's Encrypt: " LE_EMAIL
@@ -258,9 +256,15 @@ case "$ssl_choice" in
           apt install -y certbot
         fi
 
+        # КРИТИЧЕСКИЙ ШАГ: Принудительно удаляем старые сертификаты из базы Certbot
+        certbot delete --cert-name "$UI_HOST" --non-interactive >/dev/null 2>&1 || true
+
+        # Запрашиваем новый сертификат принудительно (--force-renewal и --cert-name)
         certbot certonly --standalone \
           --agree-tos \
           --non-interactive \
+          --force-renewal \
+          --cert-name "$UI_HOST" \
           --email "$LE_EMAIL" \
           -d "$UI_HOST" || warn "Не удалось получить сертификат Let's Encrypt"
 
