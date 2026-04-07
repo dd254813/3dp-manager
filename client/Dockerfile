@@ -8,6 +8,10 @@ RUN npm ci
 COPY . .
 
 ENV VITE_API_URL=/api
+ENV VITE_LOG_LEVEL=debug
+ENV VITE_SEND_LOGS_TO_BACKEND=true
+ENV VITE_APP_VERSION=2.1.0
+
 RUN npm run build
 
 FROM nginx:alpine

@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: 3dp-postgres-local
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: 3dp_manager
+    ports:
+      - "15432:5432"
+    volumes:
+      - postgres_local_data:/var/lib/postgresql/data
+    networks:
+      - 3dp-local-network
+
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: 3dp-backend-local
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: admin
+      DB_PASSWORD: admin
+      DB_NAME: 3dp_manager
+      JWT_SECRET: localDevSecretKey12345678901234567890
+      ADMIN_LOGIN: admin
+      ADMIN_PASSWORD: admin
+      PORT: 3100
+      LOG_LEVEL: debug
+      ALLOWED_ORIGINS: http://localhost:8080,http://localhost
+    ports:
+      - "3100:3100"
+    depends_on:
+      - postgres
+    networks:
+      - 3dp-local-network
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: 3dp-frontend-local
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    networks:
+      - 3dp-local-network
+
+networks:
+  3dp-local-network:
+    driver: bridge
+
+volumes:
+  postgres_local_data:

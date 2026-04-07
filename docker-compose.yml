@@ -4,11 +4,9 @@ services:
     container_name: 3dp-postgres
     restart: always
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
-      POSTGRES_DB: ${POSTGRES_DB:-3dp_manager}
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - pg_data:/var/lib/postgresql/data
     networks:
@@ -23,14 +21,15 @@ services:
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USERNAME: ${POSTGRES_USER:-admin}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-admin}
-      DB_NAME: ${POSTGRES_DB:-3dp_manager}
-      JWT_SECRET: ${JWT_SECRET:-secretKey}
-      ADMIN_LOGIN: ${ADMIN_LOGIN:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
-    ports:
-    - "3000:3000"
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_LOGIN: ${ADMIN_LOGIN}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      PORT: ${PORT}
+      LOG_LEVEL: ${LOG_LEVEL}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
     networks:
       - app-network
 

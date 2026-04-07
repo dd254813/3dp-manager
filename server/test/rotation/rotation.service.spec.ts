@@ -1,0 +1,550 @@
+/* eslint-disable @typescript-eslint/unbound-method */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { RotationService } from 'src/rotation/rotation.service';
+import { Subscription } from 'src/subscriptions/entities/subscription.entity';
+import { Inbound } from 'src/inbounds/entities/inbound.entity';
+import { Domain } from 'src/domains/entities/domain.entity';
+import { Setting } from 'src/settings/entities/setting.entity';
+import { XuiService } from 'src/xui/xui.service';
+import { InboundBuilderService } from 'src/inbounds/inbound-builder.service';
+
+// Mock @nestjs/schedule для тестирования Cron
+jest.mock('@nestjs/schedule', () => ({
+  Cron: () => () => {},
+  CronExpression: { EVERY_MINUTE: '* * * * *' },
+}));
+
+describe('RotationService', () => {
+  let service: RotationService;
+  let _subRepo: Repository<Subscription>;
+  let inboundRepo: Repository<Inbound>;
+  let _domainRepo: Repository<Domain>;
+  let settingRepo: Repository<Setting>;
+  let xuiService: XuiService;
+  let inboundBuilder: InboundBuilderService;
+
+  const mockSubRepo = {
+    find: jest.fn(),
+    findOne: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
+    delete: jest.fn(),
+    createQueryBuilder: jest.fn(() => ({
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn(),
+    })),
+  };
+
+  const mockInboundRepo = {
+    find: jest.fn(),
+    findOne: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
+    delete: jest.fn(),
+  };
+
+  const mockDomainRepo = {
+    find: jest.fn(),
+    findOne: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
+  };
+
+  const mockSettingRepo = {
+    find: jest.fn(),
+    findOne: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
+  };
+
+  const mockXuiService = {
+    login: jest.fn(),
+    deleteInbound: jest.fn(),
+    addInbound: jest.fn(),
+    getNewX25519Cert: jest.fn(),
+  };
+
+  const mockInboundBuilder = {
+    buildVlessRealityTcp: jest.fn(),
+    buildVlessRealityXhttp: jest.fn(),
+    buildVlessRealityGrpc: jest.fn(),
+    buildVlessWs: jest.fn(),
+    buildVmessTcp: jest.fn(),
+    buildShadowsocksTcp: jest.fn(),
+    buildTrojanRealityTcp: jest.fn(),
+    buildHysteria2Link: jest.fn(),
+    buildInboundLink: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        RotationService,
+        {
+          provide: getRepositoryToken(Subscription),
+          useValue: mockSubRepo,
+        },
+        {
+          provide: getRepositoryToken(Inbound),
+          useValue: mockInboundRepo,
+        },
+        {
+          provide: getRepositoryToken(Domain),
+          useValue: mockDomainRepo,
+        },
+        {
+          provide: getRepositoryToken(Setting),
+          useValue: mockSettingRepo,
+        },
+        {
+          provide: XuiService,
+          useValue: mockXuiService,
+        },
+        {
+          provide: InboundBuilderService,
+          useValue: mockInboundBuilder,
+        },
+      ],
+    }).compile();
+
+    service = module.get<RotationService>(RotationService);
+    _subRepo = module.get<Repository<Subscription>>(
+      getRepositoryToken(Subscription),
+    );
+    inboundRepo = module.get<Repository<Inbound>>(getRepositoryToken(Inbound));
+    _domainRepo = module.get<Repository<Domain>>(getRepositoryToken(Domain));
+    settingRepo = module.get<Repository<Setting>>(getRepositoryToken(Setting));
+    xuiService = module.get<XuiService>(XuiService);
+    inboundBuilder = module.get<InboundBuilderService>(InboundBuilderService);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('onModuleInit', () => {
+    it('должен инициализировать настройки по умолчанию', async () => {
+      mockSettingRepo.findOne.mockResolvedValue(null);
+      mockSettingRepo.create.mockReturnValue({ key: 'test', value: 'test' });
+      mockSettingRepo.save.mockResolvedValue({});
+
+      await service.onModuleInit();
+
+      expect(settingRepo.findOne).toHaveBeenCalled();
+      expect(settingRepo.save).toHaveBeenCalled();
+    });
+
+    it('НЕ должен создавать настройки, если они уже есть', async () => {
+      mockSettingRepo.findOne.mockResolvedValue({
+        key: 'rotation_status',
+        value: 'active',
+      });
+
+      await service.onModuleInit();
+
+      expect(settingRepo.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleTicker', () => {
+    it('НЕ должен запускать ротацию, если прошло мало времени', async () => {
+      mockSettingRepo.findOne
+        .mockResolvedValueOnce({ key: 'rotation_interval', value: '30' })
+        .mockResolvedValueOnce({
+          key: 'last_rotation_timestamp',
+          value: Date.now().toString(),
+        })
+        .mockResolvedValueOnce({ key: 'rotation_status', value: 'active' });
+
+      await (service as any).handleTicker();
+
+      expect(xuiService.login).not.toHaveBeenCalled();
+    });
+
+    it('НЕ должен запускать ротацию, если статус stopped', async () => {
+      mockSettingRepo.findOne
+        .mockResolvedValueOnce({ key: 'rotation_interval', value: '30' })
+        .mockResolvedValueOnce({ key: 'last_rotation_timestamp', value: '0' })
+        .mockResolvedValueOnce({ key: 'rotation_status', value: 'stopped' });
+
+      await (service as any).handleTicker();
+
+      expect(xuiService.login).not.toHaveBeenCalled();
+    });
+
+    it('должен запустить ротацию, если пришло время', async () => {
+      mockSettingRepo.findOne
+        .mockResolvedValueOnce({ key: 'rotation_interval', value: '1' })
+        .mockResolvedValueOnce({ key: 'last_rotation_timestamp', value: '0' })
+        .mockResolvedValueOnce({ key: 'rotation_status', value: 'active' });
+
+      mockSubRepo.find.mockResolvedValue([
+        {
+          id: '1',
+          uuid: 'uuid-1',
+          isEnabled: true,
+          isAutoRotationEnabled: true,
+          inbounds: [],
+          inboundsConfig: [],
+        },
+      ]);
+      mockDomainRepo.find.mockResolvedValue([]); // Пустой список доменов
+
+      await (service as any).handleTicker();
+
+      // Ротация запустится, но завершится с ошибкой (пустые домены)
+      expect(xuiService.login).toHaveBeenCalled();
+    });
+  });
+
+  describe('performRotation', () => {
+    it('должен вернуть ошибку, если не удалось войти в 3x-ui', async () => {
+      mockXuiService.login.mockResolvedValue(false);
+
+      const result = await service.performRotation();
+
+      expect(result).toEqual({
+        success: false,
+        message: 'Не удалось войти в панель 3x-ui',
+      });
+    });
+
+    it('должен вернуть ошибку, если нет активных подписок', async () => {
+      mockXuiService.login.mockResolvedValue(true);
+      mockSubRepo.find.mockResolvedValue([]);
+
+      const result = await service.performRotation();
+
+      expect(result).toEqual({
+        success: false,
+        message: 'Нет активных подписок для ротации',
+      });
+    });
+
+    it('должен вернуть ошибку, если список доменов пуст', async () => {
+      mockXuiService.login.mockResolvedValue(true);
+      mockSubRepo.find.mockResolvedValue([
+        {
+          id: '1',
+          uuid: 'uuid-1',
+          isEnabled: true,
+          isAutoRotationEnabled: true,
+          inbounds: [],
+        },
+      ]);
+      mockDomainRepo.find.mockResolvedValue([]);
+
+      const result = await service.performRotation();
+
+      expect(result).toEqual({
+        success: false,
+        message: 'Список доменов пуст!',
+      });
+    });
+
+    it('должен выполнить ротацию подписок', async () => {
+      mockXuiService.login.mockResolvedValue(true);
+      mockSubRepo.find.mockResolvedValue([
+        {
+          id: '1',
+          uuid: 'uuid-1',
+          isEnabled: true,
+          isAutoRotationEnabled: true,
+          inbounds: [],
+          inboundsConfig: [
+            { type: 'vless-tcp-reality', port: 443, sni: 'ya.ru' },
+          ],
+        },
+      ]);
+      mockDomainRepo.find.mockResolvedValue([
+        { id: 1, name: 'ya.ru', isEnabled: true },
+      ]);
+      mockXuiService.getNewX25519Cert.mockResolvedValue({
+        privateKey: 'key',
+        publicKey: 'pub',
+      });
+      mockInboundBuilder.buildVlessRealityTcp.mockReturnValue({
+        protocol: 'vless',
+        remark: 'test',
+        settings: '{}',
+        streamSettings: '{}',
+        sniffing: '{}',
+      });
+      mockXuiService.addInbound.mockResolvedValue(101);
+      mockInboundBuilder.buildInboundLink.mockReturnValue('vless://link');
+
+      const result = await service.performRotation();
+
+      expect(result).toEqual({
+        success: true,
+        message: 'Ротация успешно выполнена',
+      });
+    });
+  });
+
+  describe('rotateSingleSubscription', () => {
+    it('должен вернуть ошибку, если подписка не найдена', async () => {
+      mockSubRepo.findOne.mockResolvedValue(null);
+
+      const result = await service.rotateSingleSubscription('non-existent');
+
+      expect(result).toEqual({
+        success: false,
+        message: 'Подписка не найдена',
+      });
+    });
+
+    it('должен вернуть ошибку, если не удалось войти в 3x-ui', async () => {
+      mockSubRepo.findOne.mockResolvedValue({
+        id: '1',
+        uuid: 'uuid-1',
+        isEnabled: true,
+        inbounds: [],
+        inboundsConfig: [],
+      });
+      mockXuiService.login.mockResolvedValue(false);
+
+      const result = await service.rotateSingleSubscription('1');
+
+      expect(result).toEqual({
+        success: false,
+        message: 'Не удалось войти в панель 3x-ui',
+      });
+    });
+
+    it('должен вернуть ошибку, если список доменов пуст', async () => {
+      mockSubRepo.findOne.mockResolvedValue({
+        id: '1',
+        uuid: 'uuid-1',
+        isEnabled: true,
+        inbounds: [],
+        inboundsConfig: [],
+      });
+      mockXuiService.login.mockResolvedValue(true);
+      mockDomainRepo.find.mockResolvedValue([]);
+
+      const result = await service.rotateSingleSubscription('1');
+
+      expect(result).toEqual({
+        success: false,
+        message: 'Список доменов пуст!',
+      });
+    });
+
+    it('должен выполнить ротацию одной подписки', async () => {
+      const mockSub = {
+        id: '1',
+        uuid: 'uuid-1',
+        isEnabled: true,
+        inbounds: [],
+        inboundsConfig: [
+          { type: 'vless-tcp-reality', port: 443, sni: 'ya.ru' },
+        ],
+      };
+
+      mockSubRepo.findOne.mockResolvedValue(mockSub);
+      mockXuiService.login.mockResolvedValue(true);
+      mockDomainRepo.find.mockResolvedValue([
+        { id: 1, name: 'ya.ru', isEnabled: true },
+      ]);
+      mockXuiService.getNewX25519Cert.mockResolvedValue({
+        privateKey: 'key',
+        publicKey: 'pub',
+      });
+      mockInboundBuilder.buildVlessRealityTcp.mockReturnValue({
+        protocol: 'vless',
+        remark: 'test',
+        settings: '{}',
+        streamSettings: '{}',
+        sniffing: '{}',
+      });
+      mockXuiService.addInbound.mockResolvedValue(101);
+      mockInboundBuilder.buildInboundLink.mockReturnValue('vless://link');
+
+      const result = await service.rotateSingleSubscription('1');
+
+      expect(result).toEqual({
+        success: true,
+        message: 'Ротация успешно выполнена',
+      });
+    });
+
+    it('должен пропустить подписку, если не удалось получить Reality ключи', async () => {
+      const mockSub = {
+        id: '1',
+        uuid: 'uuid-1',
+        isEnabled: true,
+        inbounds: [],
+        inboundsConfig: [
+          { type: 'vless-tcp-reality', port: 443, sni: 'ya.ru' },
+        ],
+      };
+
+      mockSubRepo.findOne.mockResolvedValue(mockSub);
+      mockXuiService.login.mockResolvedValue(true);
+      mockDomainRepo.find.mockResolvedValue([
+        { id: 1, name: 'ya.ru', isEnabled: true },
+      ]);
+      mockXuiService.getNewX25519Cert.mockResolvedValue(null);
+
+      // Метод не возвращает результат явно, просто логирует ошибку
+      await service.rotateSingleSubscription('1');
+
+      expect(xuiService.getNewX25519Cert).toHaveBeenCalled();
+    });
+  });
+
+  describe('rotateSubscription (private)', () => {
+    it('должен удалить старые инбаунды перед ротацией', async () => {
+      const mockInbound = {
+        id: 'inb-1',
+        xuiId: 101,
+        port: 443,
+        protocol: 'vless',
+        remark: 'test',
+        link: 'link',
+        subscription: null as any,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const mockSub = {
+        id: '1',
+        uuid: 'uuid-1',
+        isEnabled: true,
+        inbounds: [mockInbound],
+        inboundsConfig: [],
+      };
+
+      mockInbound.subscription = mockSub;
+
+      mockDomainRepo.find.mockResolvedValue([
+        { id: 1, name: 'ya.ru', isEnabled: true },
+      ]);
+      mockXuiService.getNewX25519Cert.mockResolvedValue({
+        privateKey: 'key',
+        publicKey: 'pub',
+      });
+
+      await (service as any).rotateSubscription(mockSub, [
+        { id: 1, name: 'ya.ru', isEnabled: true },
+      ]);
+
+      expect(xuiService.deleteInbound).toHaveBeenCalledWith(101);
+      expect(inboundRepo.delete).toHaveBeenCalled();
+    });
+
+    it('должен обработать custom инбаунд без 3x-ui', async () => {
+      const mockSub = {
+        id: '1',
+        uuid: 'uuid-1',
+        isEnabled: true,
+        inbounds: [],
+        inboundsConfig: [{ type: 'custom', link: 'custom://link' }],
+      };
+
+      mockDomainRepo.find.mockResolvedValue([
+        { id: 1, name: 'ya.ru', isEnabled: true },
+      ]);
+      mockInboundRepo.save.mockResolvedValue({});
+
+      await (service as any).rotateSubscription(mockSub, [
+        { id: 1, name: 'ya.ru', isEnabled: true },
+      ]);
+
+      expect(xuiService.addInbound).not.toHaveBeenCalled();
+      expect(inboundRepo.save).toHaveBeenCalled();
+    });
+
+    it('должен обработать hysteria2-udp инбаунд', async () => {
+      const mockSub = {
+        id: '1',
+        uuid: 'uuid-1',
+        isEnabled: true,
+        inbounds: [],
+        inboundsConfig: [{ type: 'hysteria2-udp', sni: 'ya.ru' }],
+      };
+
+      mockDomainRepo.find.mockResolvedValue([
+        { id: 1, name: 'ya.ru', isEnabled: true },
+      ]);
+      mockInboundBuilder.buildHysteria2Link.mockReturnValue('hy2://link');
+      mockInboundRepo.save.mockResolvedValue({});
+
+      await (service as any).rotateSubscription(mockSub, [
+        { id: 1, name: 'ya.ru', isEnabled: true },
+      ]);
+
+      expect(xuiService.addInbound).not.toHaveBeenCalled();
+      expect(inboundBuilder.buildHysteria2Link).toHaveBeenCalled();
+    });
+
+    it('должен использовать случайный порт, если указано random', async () => {
+      const mockSub = {
+        id: '1',
+        uuid: 'uuid-1',
+        isEnabled: true,
+        inbounds: [],
+        inboundsConfig: [
+          { type: 'vless-tcp-reality', port: 'random', sni: 'ya.ru' },
+        ],
+      };
+
+      mockDomainRepo.find.mockResolvedValue([
+        { id: 1, name: 'ya.ru', isEnabled: true },
+      ]);
+      mockInboundRepo.findOne.mockResolvedValue(null); // Порт свободен
+      mockXuiService.getNewX25519Cert.mockResolvedValue({
+        privateKey: 'key',
+        publicKey: 'pub',
+      });
+      mockInboundBuilder.buildVlessRealityTcp.mockReturnValue({
+        protocol: 'vless',
+        remark: 'test',
+        settings: '{"clients":[{"id":"uuid"}]}',
+        streamSettings: '{}',
+        sniffing: '{}',
+      });
+      mockXuiService.addInbound.mockResolvedValue(101);
+      mockInboundBuilder.buildInboundLink.mockReturnValue('vless://link');
+      mockInboundRepo.save.mockResolvedValue({});
+
+      await (service as any).rotateSubscription(mockSub, [
+        { id: 1, name: 'ya.ru', isEnabled: true },
+      ]);
+
+      expect(inboundRepo.findOne).toHaveBeenCalled();
+    });
+
+    it('должен обработать неизвестный тип инбаунда', async () => {
+      const mockSub = {
+        id: '1',
+        uuid: 'uuid-1',
+        isEnabled: true,
+        inbounds: [],
+        inboundsConfig: [{ type: 'unknown-protocol', port: 443, sni: 'ya.ru' }],
+      };
+
+      mockDomainRepo.find.mockResolvedValue([
+        { id: 1, name: 'ya.ru', isEnabled: true },
+      ]);
+      mockXuiService.getNewX25519Cert.mockResolvedValue({
+        privateKey: 'key',
+        publicKey: 'pub',
+      });
+
+      await (service as any).rotateSubscription(mockSub, [
+        { id: 1, name: 'ya.ru', isEnabled: true },
+      ]);
+
+      expect(xuiService.addInbound).not.toHaveBeenCalled();
+    });
+  });
+});

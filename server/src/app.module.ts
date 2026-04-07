@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -20,12 +21,19 @@ import { AuthModule } from './auth/auth.module';
 import { ClientModule } from './client/client.module';
 import { TunnelsModule } from './tunnels/tunnels.module';
 import { Tunnel } from './tunnels/entities/tunnel.entity';
+import { SessionModule } from './session/session.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 1000,
+      },
+    ]),
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DB_HOST,
@@ -36,6 +44,7 @@ import { Tunnel } from './tunnels/entities/tunnel.entity';
       entities: [Setting, Domain, Subscription, Inbound, Tunnel],
       synchronize: true,
     }),
+    SessionModule,
     XuiModule,
     InboundsModule,
     RotationModule,
@@ -44,15 +53,19 @@ import { Tunnel } from './tunnels/entities/tunnel.entity';
     SettingsModule,
     AuthModule,
     ClientModule,
-    TunnelsModule
+    TunnelsModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
     {
       provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
       useClass: JwtAuthGuard,
     },
   ],
 })
-export class AppModule { }
+export class AppModule {}

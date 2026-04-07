@@ -1,6 +1,6 @@
-import { 
-  Toolbar, Drawer, List, ListItem, 
-  ListItemButton, ListItemIcon, ListItemText, Box, useMediaQuery, useTheme 
+import {
+  Toolbar, Drawer, List, ListItem,
+  ListItemButton, ListItemIcon, ListItemText, Box, useMediaQuery, useTheme
 } from '@mui/material';
 import { People, Settings, Dns, SwapHoriz } from '@mui/icons-material';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
@@ -8,6 +8,8 @@ import { useState } from 'react';
 
 import Header from './Header';
 import Footer from './Footer';
+import SecurityWarning from './SecurityWarning';
+import { useSecureConnection } from '../utils/useSecureConnection';
 
 const drawerWidth = 240;
 
@@ -17,6 +19,7 @@ export default function Layout() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { isSecure } = useSecureConnection();
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -81,6 +84,7 @@ export default function Layout() {
         }}
       >
         <Toolbar />
+        {!isSecure && <SecurityWarning />}
         <Box sx={{ flexGrow: 1, p: { xs: 2, md: 3 } }}>
           <Outlet />
         </Box>

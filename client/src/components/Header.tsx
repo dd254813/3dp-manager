@@ -11,6 +11,8 @@ import { useNavigate } from 'react-router-dom';
 import { useThemeContext } from '../ThemeContext';
 import { useAuth } from '../auth/AuthContext';
 import { Menu as MenuIcon } from '@mui/icons-material';
+import { APP_VERSION } from '../utils/version';
+import { Logger } from '../utils/logger';
 
 interface HeaderProps {
   onMenuClick?: () => void;
@@ -23,12 +25,20 @@ export default function Header({ onMenuClick, isMobile }: HeaderProps) {
   const navigate = useNavigate();
 
   const [helpOpen, setHelpOpen] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', onConfirm: () => {} });
 
   const handleLogout = () => {
-    if (confirm('Вы действительно хотите выйти?')) {
-      logout();
-      navigate('/login');
-    }
+    Logger.debug('Opening logout confirmation dialog', 'Header');
+    setConfirmDialog({
+      open: true,
+      title: 'Вы действительно хотите выйти?',
+      onConfirm: async () => {
+        Logger.debug('Logout confirmed by user', 'Header');
+        await logout();
+        Logger.debug('logout() resolved in Header', 'Header');
+        navigate('/login');
+      }
+    });
   };
 
   const getThemeIcon = () => {
@@ -132,12 +142,47 @@ export default function Header({ onMenuClick, isMobile }: HeaderProps) {
           </List>
 
           <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            Версия: 2.0.2<br />
+            Версия: {APP_VERSION}<br />
             Разработчик: DenPiligrim
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setHelpOpen(false)}>Понятно</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Confirmation Dialog for logout */}
+      <Dialog open={confirmDialog.open} onClose={() => setConfirmDialog({ ...confirmDialog, open: false })}>
+        <DialogTitle>Подтверждение</DialogTitle>
+        <DialogContent>
+          <Typography>{confirmDialog.title}</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              Logger.debug('Logout canceled by user', 'Header');
+              setConfirmDialog({ ...confirmDialog, open: false });
+            }}
+          >
+            Отмена
+          </Button>
+          <Button
+            onClick={async () => {
+              try {
+                await confirmDialog.onConfirm();
+              } catch (error) {
+                Logger.error('Logout confirmation action failed', 'Header', {
+                  message: error instanceof Error ? error.message : 'unknown error',
+                });
+              } finally {
+                setConfirmDialog({ ...confirmDialog, open: false });
+              }
+            }}
+            variant="contained"
+            color="error"
+          >
+            Выйти
+          </Button>
         </DialogActions>
       </Dialog>
     </>

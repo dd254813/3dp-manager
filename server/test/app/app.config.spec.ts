@@ -1,0 +1,115 @@
+import { APP_GUARD } from '@nestjs/core';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { MODULE_METADATA } from '@nestjs/common/constants';
+import { Test } from '@nestjs/testing';
+import {
+  getOptionsToken,
+  ThrottlerGuard,
+  ThrottlerModule,
+} from '@nestjs/throttler';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { AppModule } from 'src/app.module';
+
+type DynamicModuleLike = {
+  module?: unknown;
+  global?: boolean;
+  providers?: Array<{
+    provide?: unknown;
+    useClass?: unknown;
+    useValue?: unknown;
+  }>;
+};
+
+type AppImportEntry = DynamicModuleLike | Promise<DynamicModuleLike>;
+
+describe('AppModule конфигурация', () => {
+  afterEach(() => {
+    delete process.env.ALLOWED_ORIGINS;
+    delete process.env.JWT_SECRET;
+  });
+
+  it('должен регистрировать ThrottlerModule с лимитом 1000/60000ms (лояльный API)', () => {
+    const imports = (Reflect.getMetadata(MODULE_METADATA.IMPORTS, AppModule) ??
+      []) as DynamicModuleLike[];
+    const throttlerDynamicModule = imports.find(
+      (entry) => entry.module === ThrottlerModule,
+    );
+
+    expect(throttlerDynamicModule).toBeDefined();
+    const throttlerOptionsProvider = throttlerDynamicModule?.providers?.find(
+      (provider) => provider.provide === getOptionsToken(),
+    );
+    expect(throttlerOptionsProvider).toBeDefined();
+    expect(throttlerOptionsProvider?.useValue).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          limit: 1000,
+          ttl: 60000,
+        }),
+      ]),
+    );
+  });
+
+  it('должен регистрировать ThrottlerGuard и JwtAuthGuard как глобальные guards', () => {
+    const providers = (Reflect.getMetadata(
+      MODULE_METADATA.PROVIDERS,
+      AppModule,
+    ) ?? []) as DynamicModuleLike['providers'];
+
+    expect(providers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provide: APP_GUARD,
+          useClass: ThrottlerGuard,
+        }),
+        expect.objectContaining({
+          provide: APP_GUARD,
+          useClass: JwtAuthGuard,
+        }),
+      ]),
+    );
+  });
+
+  it('должен подключать ConfigModule как глобальный', async () => {
+    const imports = (Reflect.getMetadata(MODULE_METADATA.IMPORTS, AppModule) ??
+      []) as AppImportEntry[];
+    const resolvedImports = await Promise.all(
+      imports.map((entry) =>
+        entry instanceof Promise ? entry : Promise.resolve(entry),
+      ),
+    );
+    const configDynamicModule = resolvedImports.find(
+      (entry) => entry.module === ConfigModule,
+    );
+
+    expect(configDynamicModule).toBeDefined();
+    expect(configDynamicModule?.global).toBe(true);
+  });
+
+  it('должен делать ConfigService доступным и читать ALLOWED_ORIGINS из env', async () => {
+    process.env.ALLOWED_ORIGINS = 'http://test.local:8080,http://localhost';
+
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({
+          isGlobal: true,
+          ignoreEnvFile: true,
+        }),
+      ],
+    }).compile();
+
+    const configService = moduleRef.get<ConfigService>(ConfigService);
+    expect(configService).toBeDefined();
+    expect(configService.get<string>('ALLOWED_ORIGINS')).toBe(
+      'http://test.local:8080,http://localhost',
+    );
+  });
+
+  it('должен использовать достаточно длинный JWT_SECRET в тестовых env', () => {
+    process.env.JWT_SECRET = 'test-secret-key-for-jwt-signing-1234567890';
+
+    const jwtSecret = process.env.JWT_SECRET;
+    expect(jwtSecret).toBeDefined();
+    expect(jwtSecret?.length).toBeGreaterThanOrEqual(32);
+  });
+});

@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Subscription } from './entities/subscription.entity';
 import { XuiService } from '../xui/xui.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
+import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -15,7 +16,10 @@ export class SubscriptionsService {
   ) {}
 
   findAll() {
-    return this.subRepo.find({ relations: ['inbounds'], order: { createdAt: 'DESC' } });
+    return this.subRepo.find({
+      relations: ['inbounds'],
+      order: { createdAt: 'DESC' },
+    });
   }
 
   async create(dto: CreateSubscriptionDto) {
@@ -23,32 +27,43 @@ export class SubscriptionsService {
       name: dto.name,
       uuid: uuidv4(),
       inboundsConfig: dto.inboundsConfig || [],
+      isAutoRotationEnabled: dto.isAutoRotationEnabled ?? true,
     });
-    
+
     return this.subRepo.save(sub);
   }
 
-  async update(id: string, dto: CreateSubscriptionDto) {
-    const sub = await this.subRepo.findOne({ 
-      where: { id }, 
-      relations: ['inbounds'] 
+  async update(id: string, dto: UpdateSubscriptionDto) {
+    const sub = await this.subRepo.findOne({
+      where: { id },
+      relations: ['inbounds'],
     });
 
     if (!sub) {
-      throw new NotFoundException(`Subscription with ID ${id} not found`);
+      return null;
     }
 
-    sub.name = dto.name;
-    
+    // Пустое имя не обновляется — защита от случайной очистки
+    if (dto.name && dto.name.trim().length > 0) {
+      sub.name = dto.name;
+    }
+
     if (dto.inboundsConfig) {
       sub.inboundsConfig = dto.inboundsConfig;
+    }
+
+    if (dto.isAutoRotationEnabled !== undefined) {
+      sub.isAutoRotationEnabled = dto.isAutoRotationEnabled;
     }
 
     return this.subRepo.save(sub);
   }
 
   async remove(id: string) {
-    const sub = await this.subRepo.findOne({ where: { id }, relations: ['inbounds'] });
+    const sub = await this.subRepo.findOne({
+      where: { id },
+      relations: ['inbounds'],
+    });
     if (!sub) return;
 
     if (sub.inbounds && sub.inbounds.length > 0) {

@@ -1,4 +1,12 @@
-import { IsString, IsArray, ValidateNested, IsOptional, Min, Max, ArrayMinSize, ArrayMaxSize } from 'class-validator';
+import {
+  IsString,
+  IsArray,
+  ValidateNested,
+  IsOptional,
+  IsBoolean,
+  ArrayMinSize,
+  ArrayMaxSize,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class InboundConfigDto {
@@ -6,11 +14,11 @@ export class InboundConfigDto {
   type: string;
 
   @IsOptional()
-  port?: number | 'random';
+  port?: number | string;
 
   @IsString()
   @IsOptional()
-  sni?: string | 'random';
+  sni?: string;
 
   @IsString()
   @IsOptional()
@@ -28,4 +36,8 @@ export class CreateSubscriptionDto {
   @ArrayMaxSize(20)
   @IsOptional()
   inboundsConfig?: InboundConfigDto[];
+
+  @IsBoolean()
+  @IsOptional()
+  isAutoRotationEnabled?: boolean;
 }

@@ -6,14 +6,19 @@ import { Setting } from '../settings/entities/setting.entity';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './jwt.strategy';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Setting]),
     PassportModule,
-    JwtModule.register({
-      secret: 'SECRET_KEY_CHANGE_ME',
-      signOptions: { expiresIn: '24h' },
+    ConfigModule,
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      useFactory: () => ({
+        secret: process.env.JWT_SECRET || 'SECRET_KEY_CHANGE_ME',
+        signOptions: { expiresIn: '24h' },
+      }),
     }),
   ],
   providers: [AuthService, JwtStrategy],

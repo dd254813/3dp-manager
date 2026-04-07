@@ -14,43 +14,6 @@ warn() { echo -e "\033[1;33m[WARN]\033[0m $1"; }
 
 [[ $EUID -eq 0 ]] || { echo "Запускать нужно от root"; exit 1; }
 
-read -r -p "Вы уверены, что хотите удалить? (y/n): " answer
-
-case "$answer" in
-  y|Y)
-    echo "Начинаю удаление..."
-    ;;
-  *)
-    echo "Удаление отменено"
-    exit 1
-    ;;
-esac
-
-#################################
-# PATHS
-#################################
-BASE_DIR="/opt/3dp-manager"
-UFW_BEFORE="/etc/ufw/before.rules"
-UFW_NAT_MARKER="3dp-manager NAT"
-NGINX_PORT=$(cd "$BASE_DIR" && docker compose exec -T node printenv ORIGIN_PORT | tr -d '\r')
-
-#################################
-# DOCKER CLEAN
-#################################
-if [[ -d "$BASE_DIR" ]]; then
-  log "Остановка Docker"
-  cd "$BASE_DIR"
-  docker compose down --remove-orphans || true
-else
-  warn "Каталог проекта не найден"
-fi
-
-#################################
-# REMOVE FILES
-#################################
-log "Удаление файлов проекта"
-rm -rf "$BASE_DIR"
-
 #################################
 # UFW NAT CLEAN
 #################################
@@ -71,7 +34,6 @@ ufw delete allow 443/tcp
 ufw delete allow 443/udp
 ufw delete allow 8443/tcp
 ufw delete allow 8443/udp
-ufw delete allow "$NGINX_PORT"/tcp
 ufw delete allow 10000:60000/tcp
 ufw delete allow 10000:60000/udp
 
@@ -85,7 +47,10 @@ ufw reload
 # RESULT
 #################################
 
-echo "Docker контейнеры удалены"
 echo "UFW NAT очищен"
 echo "ip_forward отключён"
-log "Откат завершён. Для окончательного применения изменений перезагрузите систему!"
+log "Откат завершён. Для окончательного применения изменений система будет перезагружена!"
+
+(sleep 3 && reboot) >/dev/null 2>&1 &
+
+exit 0

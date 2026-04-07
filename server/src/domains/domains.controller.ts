@@ -1,9 +1,21 @@
-import { Controller, Get, Post, Body, Param, Delete, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Delete,
+  Query,
+} from '@nestjs/common';
 import { DomainsService } from './domains.service';
+import { DomainScannerService } from './domain-scanner.service';
 
 @Controller('domains')
 export class DomainsController {
-  constructor(private readonly domainsService: DomainsService) { }
+  constructor(
+    private readonly domainsService: DomainsService,
+    private readonly domainScannerService: DomainScannerService,
+  ) {}
 
   @Post()
   create(@Body() body: { name: string }) {
@@ -15,16 +27,41 @@ export class DomainsController {
     return this.domainsService.createMany(body.domains);
   }
 
+  @Get('scan/capabilities')
+  scanCapabilities() {
+    return this.domainScannerService.getCapabilities();
+  }
+
+  @Get('scan/status')
+  scanStatus() {
+    return this.domainScannerService.getScanStatus();
+  }
+
+  @Get('scan/last-result')
+  lastScanResult() {
+    return this.domainScannerService.getLastScanResult();
+  }
+
+  @Post('scan/start')
+  startScan(
+    @Body()
+    body: {
+      addr: string;
+      scanSeconds?: number;
+      thread?: number;
+      timeout?: number;
+    },
+  ) {
+    return this.domainScannerService.startScan(body);
+  }
+
   @Get('all')
   findAllWithoutPagination() {
-    return this.domainsService.findAllUnpaginated(); 
+    return this.domainsService.findAllUnpaginated();
   }
 
   @Get()
-  findAll(
-    @Query('page') page: number,
-    @Query('limit') limit: number
-  ) {
+  findAll(@Query('page') page: number, @Query('limit') limit: number) {
     const pageNum = page ? +page : 1;
     const limitNum = limit ? +limit : 10;
 
