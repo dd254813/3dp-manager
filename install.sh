@@ -6,7 +6,7 @@ set -euo pipefail
 #################################
 PROJECT_DIR="/opt/3dp-manager"
 DOCKER_USER="denpiligrim"
-DOCKER_TAG="dp-new-release"
+DOCKER_TAG="main"
 IMAGE_SERVER="ghcr.io/${DOCKER_USER}/3dp-manager-server:${DOCKER_TAG}"
 IMAGE_CLIENT="ghcr.io/${DOCKER_USER}/3dp-manager-client:${DOCKER_TAG}"
 
@@ -456,6 +456,7 @@ server {
         proxy_set_header Host \$http_host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_connect_timeout 10s;
         proxy_send_timeout 650s;
         proxy_read_timeout 650s;
@@ -566,6 +567,7 @@ server {
         proxy_cache_bypass \$http_upgrade;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_connect_timeout 10s;
         proxy_send_timeout 650s;
         proxy_read_timeout 650s;
