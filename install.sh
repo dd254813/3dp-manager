@@ -6,7 +6,7 @@ set -euo pipefail
 #################################
 PROJECT_DIR="/opt/3dp-manager"
 DOCKER_USER="denpiligrim"
-DOCKER_TAG="main"
+DOCKER_TAG="dp-new-release"
 IMAGE_SERVER="ghcr.io/${DOCKER_USER}/3dp-manager-server:${DOCKER_TAG}"
 IMAGE_CLIENT="ghcr.io/${DOCKER_USER}/3dp-manager-client:${DOCKER_TAG}"
 

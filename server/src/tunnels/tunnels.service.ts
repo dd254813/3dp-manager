@@ -55,7 +55,7 @@ export class TunnelsService {
       `Начинаем установку редиректа на ${tunnel.ip} -> ${mainServerIp}`,
     );
 
-    const command = `sudo ORIGIN_IP="${mainServerIp}" bash -c "$(curl -sSL https://raw.githubusercontent.com/denpiligrim/3dp-manager/main/forwarding_install.sh)"`;
+    const command = `sudo ORIGIN_IP="${mainServerIp}" bash -c "$(curl -sSL https://raw.githubusercontent.com/denpiligrim/3dp-manager/dp-new-release/forwarding_install.sh)"`;
 
     try {
       const output = await this.sshService.executeCommand(
