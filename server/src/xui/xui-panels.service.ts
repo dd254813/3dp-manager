@@ -19,6 +19,12 @@ interface XuiPanelPayload {
   login: string;
   password: string;
   isEnabled?: boolean;
+  hysteriaEnabled?: boolean;
+  hysteriaHost?: string;
+  hysteriaPort?: number | string | null;
+  hysteriaPassword?: string;
+  hysteriaObfsPassword?: string;
+  hysteriaSni?: string;
 }
 
 @Injectable()
@@ -69,6 +75,13 @@ export class XuiPanelsService {
       login: payload.login ?? current.login,
       password: payload.password ?? current.password,
       isEnabled: payload.isEnabled ?? current.isEnabled,
+      hysteriaEnabled: payload.hysteriaEnabled ?? current.hysteriaEnabled,
+      hysteriaHost: payload.hysteriaHost ?? current.hysteriaHost,
+      hysteriaPort: payload.hysteriaPort ?? current.hysteriaPort,
+      hysteriaPassword: payload.hysteriaPassword ?? current.hysteriaPassword,
+      hysteriaObfsPassword:
+        payload.hysteriaObfsPassword ?? current.hysteriaObfsPassword,
+      hysteriaSni: payload.hysteriaSni ?? current.hysteriaSni,
     });
 
     Object.assign(current, prepared);
@@ -90,6 +103,15 @@ export class XuiPanelsService {
     const url = payload.url?.trim().replace(/\/+$/, '');
     const login = payload.login?.trim();
     const password = payload.password?.trim();
+    const hysteriaEnabled = payload.hysteriaEnabled ?? false;
+    const hysteriaHost = this.normalizeOptionalString(payload.hysteriaHost);
+    const hysteriaPassword = this.normalizeOptionalString(
+      payload.hysteriaPassword,
+    );
+    const hysteriaObfsPassword = this.normalizeOptionalString(
+      payload.hysteriaObfsPassword,
+    );
+    const hysteriaSni = this.normalizeOptionalString(payload.hysteriaSni);
 
     if (!name) {
       throw new BadRequestException('Введите название панели');
@@ -112,6 +134,37 @@ export class XuiPanelsService {
       parsedUrl = new URL(url);
     } catch {
       throw new BadRequestException('Некорректный URL панели');
+    }
+
+    let hysteriaPort: number | null = null;
+    if (
+      payload.hysteriaPort !== undefined &&
+      payload.hysteriaPort !== null &&
+      `${payload.hysteriaPort}`.trim().length > 0
+    ) {
+      hysteriaPort =
+        typeof payload.hysteriaPort === 'string'
+          ? parseInt(payload.hysteriaPort, 10)
+          : payload.hysteriaPort;
+
+      if (!Number.isFinite(hysteriaPort) || hysteriaPort <= 0 || hysteriaPort > 65535) {
+        throw new BadRequestException('Некорректный порт Hysteria2');
+      }
+    }
+
+    if (hysteriaEnabled) {
+      if (!hysteriaHost) {
+        throw new BadRequestException('Введите host для Hysteria2');
+      }
+      if (!hysteriaPort) {
+        throw new BadRequestException('Введите порт для Hysteria2');
+      }
+      if (!hysteriaPassword) {
+        throw new BadRequestException('Введите пароль Hysteria2');
+      }
+      if (!hysteriaObfsPassword) {
+        throw new BadRequestException('Введите obfs пароль Hysteria2');
+      }
     }
 
     const host = parsedUrl.hostname;
@@ -166,7 +219,18 @@ export class XuiPanelsService {
       geoCountry,
       geoFlag,
       isEnabled: payload.isEnabled ?? true,
+      hysteriaEnabled,
+      hysteriaHost,
+      hysteriaPort,
+      hysteriaPassword,
+      hysteriaObfsPassword,
+      hysteriaSni,
     };
+  }
+
+  private normalizeOptionalString(value?: string | null) {
+    const normalized = value?.trim();
+    return normalized ? normalized : null;
   }
 
   private async syncLegacyPrimarySettings() {
