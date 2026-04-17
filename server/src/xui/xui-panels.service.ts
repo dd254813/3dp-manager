@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as dns from 'dns/promises';
 import * as net from 'net';
 import { Repository } from 'typeorm';
+import { Inbound } from '../inbounds/entities/inbound.entity';
 import { Setting } from '../settings/entities/setting.entity';
 import { COUNTRIES } from '../settings/countries';
 import { XuiPanel } from './entities/xui-panel.entity';
@@ -29,6 +30,8 @@ export class XuiPanelsService {
     private panelsRepo: Repository<XuiPanel>,
     @InjectRepository(Setting)
     private settingsRepo: Repository<Setting>,
+    @InjectRepository(Inbound)
+    private inboundRepo: Repository<Inbound>,
   ) {}
 
   findAll() {
@@ -76,6 +79,7 @@ export class XuiPanelsService {
 
   async remove(id: number) {
     const panel = await this.findOne(id);
+    await this.inboundRepo.delete({ xuiPanelId: id });
     await this.panelsRepo.remove(panel);
     await this.syncLegacyPrimarySettings();
     return { success: true };
