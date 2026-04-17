@@ -9,6 +9,9 @@ export class Inbound {
   @Column()
   xuiId: number;
 
+  @Column({ nullable: true })
+  xuiPanelId: number | null;
+
   @Column()
   port: number;
 
