@@ -1,11 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosError, AxiosInstance } from 'axios';
 import * as https from 'https';
-import { Setting } from '../settings/entities/setting.entity';
-import { XuiResponse, XuiCertResult, XuiInboundRaw } from './xui.types';
 import { SessionService } from '../session/session.service';
+import { XuiPanel } from './entities/xui-panel.entity';
+import { XuiPanelsService } from './xui-panels.service';
+import { XuiResponse, XuiCertResult, XuiInboundRaw } from './xui.types';
 
 interface LoginResponse {
   success: boolean;
@@ -14,147 +13,184 @@ interface LoginResponse {
 @Injectable()
 export class XuiService {
   private readonly logger = new Logger(XuiService.name);
-  private api: AxiosInstance;
 
   constructor(
-    @InjectRepository(Setting)
-    private settingsRepo: Repository<Setting>,
     private sessionService: SessionService,
-  ) {
-    this.api = axios.create({
+    private panelsService: XuiPanelsService,
+  ) {}
+
+  findAllPanels() {
+    return this.panelsService.findAll();
+  }
+
+  getEnabledPanels() {
+    return this.panelsService.findEnabled();
+  }
+
+  getPanel(panelId: number) {
+    return this.panelsService.findOne(panelId);
+  }
+
+  private createApi(panel: XuiPanel): AxiosInstance {
+    const api = axios.create({
+      baseURL: panel.url,
       timeout: 15000,
       httpsAgent: new https.Agent({ rejectUnauthorized: false }),
       withCredentials: true,
     });
 
-    this.api.interceptors.request.use((config) => {
-      const cookie = this.sessionService.getCookie();
+    api.interceptors.request.use((config) => {
+      const cookie = this.sessionService.getCookie(panel.id);
       if (cookie) {
         config.headers['Cookie'] = cookie;
       }
       return config;
     });
+
+    return api;
   }
 
-  private async getSettings() {
-    const settings = await this.settingsRepo.find();
-    const config: Record<string, string> = {};
-    settings.forEach((s) => (config[s.key] = s.value));
-    return config;
+  async login(panelId: number) {
+    const panel = await this.panelsService.findOne(panelId);
+    return this.loginPanel(panel);
   }
 
-  async login() {
+  async loginPanel(panel: XuiPanel) {
     try {
-      const config = await this.getSettings();
-      if (
-        !config['xui_url'] ||
-        !config['xui_login'] ||
-        !config['xui_password']
-      ) {
-        this.logger.warn('Настройки 3x-ui не заполнены в БД');
+      if (!panel.url || !panel.login || !panel.password) {
+        this.logger.warn(`Настройки панели ${panel.name} заполнены не полностью`);
         return false;
       }
 
-      this.logger.log(`Attempting login to 3x-ui: ${config['xui_url']}`);
-      this.api.defaults.baseURL = config['xui_url'];
+      this.logger.log(`Attempting login to 3x-ui panel ${panel.name}: ${panel.url}`);
+      const api = this.createApi(panel);
 
-      const res = await this.api.post<LoginResponse>('/login', {
-        username: config['xui_login'],
-        password: config['xui_password'],
+      const res = await api.post<LoginResponse>('/login', {
+        username: panel.login,
+        password: panel.password,
       });
 
-      if (res.headers['set-cookie']) {
-        this.sessionService.setFromHeaders(res.headers['set-cookie']);
-        this.logger.log('3x-ui login successful');
+      if (res.headers['set-cookie'] && res.data?.success) {
+        this.sessionService.setFromHeaders(panel.id, res.headers['set-cookie']);
+        this.logger.log(`3x-ui login successful for panel ${panel.name}`);
         return true;
-      } else {
-        this.logger.warn('3x-ui login failed: No cookie received');
       }
-    } catch (e) {
-      const error = e as AxiosError;
-      this.logger.error(`3x-ui login error: ${error.message}`);
+
+      this.logger.warn(`3x-ui login failed for panel ${panel.name}`);
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      this.logger.error(
+        `3x-ui login error for panel ${panel.name}: ${axiosError.message}`,
+      );
     }
+
     return false;
   }
 
   async addInbound(
+    panelId: number,
     inboundConfig: { port: number; [key: string]: unknown } | XuiInboundRaw,
   ): Promise<number | null> {
+    const panel = await this.panelsService.findOne(panelId);
     let attempts = 0;
     const maxAttempts = 3;
+    let currentConfig = { ...inboundConfig };
 
-    this.logger.log(`Adding inbound on port ${inboundConfig.port}`);
+    this.logger.log(
+      `Adding inbound on panel ${panel.name} using port ${currentConfig.port}`,
+    );
 
     while (attempts < maxAttempts) {
       attempts++;
+      const api = this.createApi(panel);
 
       try {
-        const res = await this.api.post<XuiResponse<{ id: number }>>(
+        const res = await api.post<XuiResponse<{ id: number }>>(
           '/panel/api/inbounds/add',
-          inboundConfig,
+          currentConfig,
         );
 
         if (res.data?.success) {
           this.logger.log(
-            `Inbound created successfully with ID: ${res.data.obj.id}`,
+            `Inbound created on panel ${panel.name} with ID: ${res.data.obj.id}`,
           );
           return res.data.obj.id;
-        } else {
-          const msg = res.data?.msg || '';
-
-          if (
-            msg.toLowerCase().includes('port') &&
-            msg.toLowerCase().includes('exists')
-          ) {
-            this.logger.warn(
-              `Попытка ${attempts}/${maxAttempts}: Порт ${inboundConfig.port} занят. Генерируем новый...`,
-            );
-
-            inboundConfig.port = Math.floor(
-              Math.random() * (60000 - 10000 + 1) + 10000,
-            );
-          } else {
-            this.logger.error(`3x-ui отклонил создание: ${msg}`);
-            return null;
-          }
         }
-      } catch (e) {
-        const error = e as AxiosError;
-        if (error.response?.status === 401) {
-          this.logger.log('Сессия истекла, пробуем релогин...');
-          if (await this.login()) {
-            return this.addInbound(inboundConfig);
+
+        const message = res.data?.msg || '';
+        if (
+          message.toLowerCase().includes('port') &&
+          message.toLowerCase().includes('exists')
+        ) {
+          this.logger.warn(
+            `Порт ${currentConfig.port} занят на панели ${panel.name}, подбираем новый`,
+          );
+          currentConfig = {
+            ...currentConfig,
+            port: Math.floor(Math.random() * (60000 - 10000 + 1) + 10000),
+          };
+          continue;
+        }
+
+        this.logger.error(
+          `3x-ui отклонил создание на панели ${panel.name}: ${message}`,
+        );
+        return null;
+      } catch (error) {
+        const axiosError = error as AxiosError;
+        if (axiosError.response?.status === 401) {
+          this.logger.log(
+            `Сессия панели ${panel.name} истекла, пробуем перелогин`,
+          );
+          if (await this.loginPanel(panel)) {
+            continue;
           }
         }
 
         this.logger.error(
-          `Ошибка сети/валидации при добавлении инбаунда: ${error.message}`,
+          `Ошибка добавления инбаунда на панели ${panel.name}: ${axiosError.message}`,
         );
         return null;
       }
     }
 
     this.logger.error(
-      `Не удалось создать инбаунд после ${maxAttempts} попыток смены порта.`,
+      `Не удалось создать инбаунд на панели ${panel.name} после ${maxAttempts} попыток`,
     );
     return null;
   }
 
-  async deleteInbound(id: number) {
+  async deleteInbound(panelId: number, inboundId: number, retried = false) {
     try {
-      await this.api.post(`/panel/api/inbounds/del/${id}`);
-      this.logger.debug(`Инбаунд ${id} удален`);
-    } catch (e) {
-      const error = e as AxiosError;
-      this.logger.error(`Ошибка удаления инбаунда ${id}: ${error.message}`);
+      const panel = await this.panelsService.findOne(panelId);
+      const api = this.createApi(panel);
+
+      await api.post(`/panel/api/inbounds/del/${inboundId}`);
+      this.logger.debug(`Инбаунд ${inboundId} удален с панели ${panel.name}`);
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      if (
+        axiosError.response?.status === 401 &&
+        !retried
+      ) {
+        try {
+          const panel = await this.panelsService.findOne(panelId);
+          if (await this.loginPanel(panel)) {
+            await this.deleteInbound(panelId, inboundId, true);
+            return;
+          }
+        } catch {
+          return;
+        }
+      }
+
+      this.logger.error(
+        `Ошибка удаления инбаунда ${inboundId} с панели ${panelId}: ${axiosError.message}`,
+      );
     }
   }
 
-  async checkConnection(
-    url: string,
-    username: string,
-    pass: string,
-  ): Promise<boolean> {
+  async checkConnection(url: string, username: string, pass: string): Promise<boolean> {
     try {
       this.logger.log(`Checking connection to 3x-ui: ${url}`);
 
@@ -166,36 +202,49 @@ export class XuiService {
       });
 
       const res = await tempApi.post<LoginResponse>('/login', {
-        username: username,
+        username,
         password: pass,
       });
 
       if (res.headers['set-cookie'] && res.data?.success) {
         this.logger.log(`Connection to 3x-ui successful: ${url}`);
         return true;
-      } else {
-        this.logger.warn(
-          `Connection failed: Invalid credentials or no cookie received`,
-        );
       }
+
+      this.logger.warn('Connection failed: Invalid credentials or no cookie received');
     } catch (error) {
       const axiosError = error as AxiosError;
-      this.logger.error(
-        `Connection error: ${axiosError.message} (URL: ${url})`,
-      );
+      this.logger.error(`Connection error: ${axiosError.message} (URL: ${url})`);
     }
+
     return false;
   }
 
-  async getNewX25519Cert(): Promise<XuiCertResult | null> {
+  async getNewX25519Cert(panelId: number, retried = false): Promise<XuiCertResult | null> {
     try {
-      const res = await this.api.get<XuiResponse<XuiCertResult>>(
+      const panel = await this.panelsService.findOne(panelId);
+      const api = this.createApi(panel);
+      const res = await api.get<XuiResponse<XuiCertResult>>(
         '/panel/api/server/getNewX25519Cert',
       );
-      if (res.data?.success && res.data.obj) return res.data.obj;
-    } catch {
-      this.logger.error('Ошибка получения ключей Reality');
+
+      if (res.data?.success && res.data.obj) {
+        return res.data.obj;
+      }
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      if (axiosError.response?.status === 401 && !retried) {
+        const panel = await this.panelsService.findOne(panelId);
+        if (await this.loginPanel(panel)) {
+          return this.getNewX25519Cert(panelId, true);
+        }
+      }
+
+      this.logger.error(
+        `Ошибка получения Reality ключей для панели ${panelId}: ${axiosError.message}`,
+      );
     }
+
     return null;
   }
 }
