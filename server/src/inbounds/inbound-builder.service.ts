@@ -599,11 +599,17 @@ export class InboundBuilderService {
     serverAddress: string,
     sni: string,
     remark: string,
+    options?: {
+      port?: number;
+      password?: string;
+      obfsPassword?: string;
+      obfsType?: string;
+    },
   ): string {
-    let auth = 'YOUR_AUTH';
-    let obfs = 'salamander';
-    let obfsPass = 'YOUR_PASS';
-    let port = 443;
+    let auth = options?.password || 'YOUR_AUTH';
+    let obfs = options?.obfsType || 'salamander';
+    let obfsPass = options?.obfsPassword || 'YOUR_PASS';
+    let port = options?.port || 443;
 
     try {
       const configPath =
@@ -613,18 +619,18 @@ export class InboundBuilderService {
         const fileContent = fs.readFileSync(configPath, 'utf8');
 
         const authMatch = fileContent.match(/password:\s*['"]?([^'"\n]+)['"]?/);
-        if (authMatch) auth = authMatch[1];
+        if (authMatch && !options?.password) auth = authMatch[1];
 
         const obfsMatch = fileContent.match(/type:\s*['"]?(salamander)['"]?/);
-        if (obfsMatch) obfs = obfsMatch[1];
+        if (obfsMatch && !options?.obfsType) obfs = obfsMatch[1];
 
         const passMatch = fileContent.match(
-          /salamander:[\s\S]*?password:\s*['"]?([^'"\n]+)['"]?/,
+          /salamander:[\s\S]*?password:\s*['"]?([^'"\n]+)['"]?/
         );
-        if (passMatch) obfsPass = passMatch[1];
+        if (passMatch && !options?.obfsPassword) obfsPass = passMatch[1];
 
         const listenMatch = fileContent.match(/listen:\s*['"]?:(\d+)['"]?/);
-        if (listenMatch) port = parseInt(listenMatch[1], 10);
+        if (listenMatch && !options?.port) port = parseInt(listenMatch[1], 10);
       } else {
         console.warn(`Конфиг Hysteria2 не найден по пути: ${configPath}`);
       }
@@ -634,7 +640,7 @@ export class InboundBuilderService {
 
     const params = new URLSearchParams();
     params.set('insecure', '0');
-    params.set('sni', serverAddress);
+    params.set('sni', sni || serverAddress);
     params.set('obfs', obfs);
     params.set('obfs-password', obfsPass);
 
