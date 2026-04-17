@@ -298,16 +298,16 @@ SOURCE_CHANNEL_IMAGE_TAG=${SOURCE_CHANNEL_IMAGE_TAG}
 EOF
 }
 
-channel_repo_owner() {
-  echo "${SOURCE_CHANNEL_REPO%%/*}"
+channel_repo_slug() {
+  echo "${SOURCE_CHANNEL_REPO}"
 }
 
 image_backend_ref() {
-  echo "ghcr.io/$(channel_repo_owner)/3dp-manager-backend:${SOURCE_CHANNEL_IMAGE_TAG}"
+  echo "ghcr.io/$(channel_repo_slug)-server:${SOURCE_CHANNEL_IMAGE_TAG}"
 }
 
 image_frontend_ref() {
-  echo "ghcr.io/$(channel_repo_owner)/3dp-manager-frontend:${SOURCE_CHANNEL_IMAGE_TAG}"
+  echo "ghcr.io/$(channel_repo_slug)-client:${SOURCE_CHANNEL_IMAGE_TAG}"
 }
 
 ensure_local_nginx_client_conf() {
