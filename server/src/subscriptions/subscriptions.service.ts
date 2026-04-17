@@ -43,7 +43,6 @@ export class SubscriptionsService {
       return null;
     }
 
-    // Пустое имя не обновляется — защита от случайной очистки
     if (dto.name && dto.name.trim().length > 0) {
       sub.name = dto.name;
     }
@@ -68,7 +67,9 @@ export class SubscriptionsService {
 
     if (sub.inbounds && sub.inbounds.length > 0) {
       for (const inbound of sub.inbounds) {
-        await this.xuiService.deleteInbound(inbound.xuiId);
+        if (inbound.xuiId > 0 && inbound.xuiPanelId) {
+          await this.xuiService.deleteInbound(inbound.xuiPanelId, inbound.xuiId);
+        }
       }
     }
 
