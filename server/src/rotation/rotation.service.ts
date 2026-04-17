@@ -254,7 +254,7 @@ export class RotationService implements OnModuleInit {
   private async createSingletonInbounds(
     sub: Subscription,
     domains: Domain[],
-    primaryPanel: XuiPanel,
+    primaryPanel?: XuiPanel,
   ) {
     const inboundsConfig = sub.inboundsConfig || [];
     const serverAddress = primaryPanel?.host || 'localhost';
