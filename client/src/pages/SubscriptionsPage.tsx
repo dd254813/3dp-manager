@@ -300,7 +300,7 @@ export default function SubscriptionsPage() {
     setEditingId(null);
     setName('');
     setInbounds([
-      { id: generateId(), type: 'hysteria2-udp', port: 'random', sni: 'random', link: '' },
+      { id: generateId(), type: 'hysteria2-udp', port: 'random', sni: '', link: '' },
       { id: generateId(), type: 'vless-xhttp-reality', port: 'random', sni: 'random', link: '' },
       { id: generateId(), type: 'vless-tcp-reality', port: 'random', sni: 'random', link: '' },
       { id: generateId(), type: 'vless-tcp-reality', port: 'random', sni: 'random', link: '' },
@@ -328,7 +328,12 @@ export default function SubscriptionsPage() {
           id: generateId(),
           type: i.type || 'vless-tcp-reality',
           port: i.port ? i.port.toString() : 'random',
-          sni: i.sni || 'random',
+          sni:
+            i.sni !== undefined
+              ? i.sni
+              : i.type === 'hysteria2-udp'
+                ? ''
+                : 'random',
           link: i.link || '',
         })),
       );
@@ -1004,13 +1009,18 @@ export default function SubscriptionsPage() {
                     />
                   </FormControl>
 
-                  <FormControl size="small" sx={{ minWidth: 150 }}>
+                  <FormControl size="small" sx={{ minWidth: 170 }}>
                     <InputLabel>SNI</InputLabel>
                     <Select
                       value={inb.sni}
                       label="SNI"
                       onChange={(e) => handleInboundChange(inb.id, 'sni', e.target.value)}
                     >
+                      <MenuItem value="">
+                        {inb.type === 'hysteria2-udp'
+                          ? 'по настройке панели'
+                          : 'по умолчанию'}
+                      </MenuItem>
                       <MenuItem value="random">random</MenuItem>
                       {domains.map((opt) => (
                         <MenuItem key={opt.id} value={opt.name}>
