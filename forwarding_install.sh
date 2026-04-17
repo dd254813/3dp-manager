@@ -135,6 +135,8 @@ log "Обновляю правила UFW"
 cp /etc/ufw/before.rules /etc/ufw/before.rules.bak
 build_managed_rules > /tmp/ufw_3dp_rules
 sed -i '/# 3dp-manager start/,/# 3dp-manager end/d' /etc/ufw/before.rules
+sed -i '/^\*nat$/,/^COMMIT$/d' /etc/ufw/before.rules
+sed -i '/^\*mangle$/,/^COMMIT$/d' /etc/ufw/before.rules
 cat /tmp/ufw_3dp_rules /etc/ufw/before.rules > /etc/ufw/before.rules.new
 mv /etc/ufw/before.rules.new /etc/ufw/before.rules
 
