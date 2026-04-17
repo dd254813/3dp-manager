@@ -11,11 +11,14 @@ PROJECT_DIR="/opt/3dp-manager"
 BACKUP_ROOT="/opt/3dp-manager-backups"
 TARGET_REPO="${TARGET_REPO:-dd254813/3dp-manager}"
 TARGET_REF="${TARGET_REF:-main}"
+DEPLOY_MODE="${DEPLOY_MODE:-build}"
 SOURCE_CHANNEL_FILE="${PROJECT_DIR}/.3dp-source-channel"
 MIN_BUILD_FREE_GB="${MIN_BUILD_FREE_GB:-5}"
+SERVICES_TO_BUILD="${SERVICES_TO_BUILD:-backend frontend}"
 COMPOSE_CMD=()
 DOWNLOADED_SOURCE_DIR=""
 DOWNLOADED_SOURCE_ROOT=""
+TARGET_IMAGE_TAG="${TARGET_IMAGE_TAG:-${TARGET_REF}}"
 
 need_root() {
   [[ $EUID -eq 0 ]] || die "Запускать только от root"
@@ -302,6 +305,18 @@ download_source_archive() {
   [[ -n "$DOWNLOADED_SOURCE_DIR" ]] || die "Не удалось распаковать исходники ${repo}@${ref}"
 }
 
+channel_repo_owner() {
+  echo "${TARGET_REPO%%/*}"
+}
+
+image_backend_ref() {
+  echo "ghcr.io/$(channel_repo_owner)/3dp-manager-backend:${TARGET_IMAGE_TAG}"
+}
+
+image_frontend_ref() {
+  echo "ghcr.io/$(channel_repo_owner)/3dp-manager-frontend:${TARGET_IMAGE_TAG}"
+}
+
 ensure_local_nginx_client_conf() {
   local project_nginx_conf="${PROJECT_DIR}/client/nginx-client.conf"
   local source_nginx_conf="${DOWNLOADED_SOURCE_DIR}/client/nginx-client.conf"
@@ -373,6 +388,60 @@ convert_compose_to_source_build() {
   mv "$tmp_file" "$compose_file"
 }
 
+convert_compose_to_fork_images() {
+  local compose_file="$1"
+  local tmp_file
+  local backend_image
+  local frontend_image
+  backend_image="$(image_backend_ref)"
+  frontend_image="$(image_frontend_ref)"
+  tmp_file="$(mktemp)"
+
+  awk -v backend_image="$backend_image" -v frontend_image="$frontend_image" '
+    function insert_image(service_name) {
+      if (inserted == 0) {
+        if (service_name == "backend") {
+          print "    image: " backend_image
+        }
+        if (service_name == "frontend") {
+          print "    image: " frontend_image
+        }
+        inserted = 1
+      }
+    }
+    {
+      if ($0 ~ /^  backend:[[:space:]]*$/) {
+        section = "backend"
+        inserted = 0
+        print
+        next
+      }
+      if ($0 ~ /^  frontend:[[:space:]]*$/) {
+        section = "frontend"
+        inserted = 0
+        print
+        next
+      }
+      if ($0 ~ /^  [A-Za-z0-9_-]+:[[:space:]]*$/ && $0 !~ /^  (backend|frontend):[[:space:]]*$/) {
+        section = ""
+        inserted = 0
+      }
+      if (section == "backend" || section == "frontend") {
+        if ($0 ~ /^    image:[[:space:]]*/ || $0 ~ /^    build:[[:space:]]*/) {
+          insert_image(section)
+          next
+        }
+        if (inserted == 0 && $0 ~ /^    [^[:space:]]/) {
+          insert_image(section)
+        }
+      }
+      print
+    }
+  ' "$compose_file" > "$tmp_file"
+
+  mv "$tmp_file" "$compose_file"
+}
+
 sync_source_tree() {
   [[ -n "$DOWNLOADED_SOURCE_DIR" ]] || die "Каталог с исходниками не подготовлен"
 
@@ -401,7 +470,19 @@ write_source_channel() {
   cat > "$SOURCE_CHANNEL_FILE" <<EOF
 SOURCE_CHANNEL_REPO=${TARGET_REPO}
 SOURCE_CHANNEL_REF=${TARGET_REF}
+SOURCE_CHANNEL_MODE=${DEPLOY_MODE}
+SOURCE_CHANNEL_IMAGE_TAG=${TARGET_IMAGE_TAG}
 EOF
+}
+
+build_services_sequentially() {
+  local service
+  for service in $SERVICES_TO_BUILD; do
+    log "Собираю сервис: ${service}"
+    "${COMPOSE_CMD[@]}" build --pull "$service"
+    docker builder prune -f >/dev/null 2>&1 || true
+    docker image prune -f >/dev/null 2>&1 || true
+  done
 }
 
 need_root
@@ -426,18 +507,27 @@ download_source_archive "$TARGET_REPO" "$TARGET_REF"
 log "Копирую новую версию поверх текущей установки"
 sync_source_tree
 ensure_local_nginx_client_conf
-convert_compose_to_source_build "${PROJECT_DIR}/docker-compose.yml"
 ensure_nginx_api_timeouts "${PROJECT_DIR}/client/nginx-client.conf"
 ensure_bus_location "${PROJECT_DIR}/client/nginx-client.conf"
 write_source_channel
 
 cd "$PROJECT_DIR"
-cleanup_docker_build_cache
-ensure_build_headroom "$MIN_BUILD_FREE_GB"
-log "Пересобираю backend/frontend уже из исходников форка"
-"${COMPOSE_CMD[@]}" pull postgres || true
-"${COMPOSE_CMD[@]}" build --pull backend frontend
-"${COMPOSE_CMD[@]}" up -d --remove-orphans
+if [[ "$DEPLOY_MODE" == "images" ]]; then
+  convert_compose_to_fork_images "${PROJECT_DIR}/docker-compose.yml"
+  log "Мигрирую в image-режим: $(image_backend_ref) и $(image_frontend_ref)"
+  docker pull "$(image_backend_ref)"
+  docker pull "$(image_frontend_ref)"
+  "${COMPOSE_CMD[@]}" pull postgres || true
+  "${COMPOSE_CMD[@]}" up -d --remove-orphans
+else
+  convert_compose_to_source_build "${PROJECT_DIR}/docker-compose.yml"
+  cleanup_docker_build_cache
+  ensure_build_headroom "$MIN_BUILD_FREE_GB"
+  log "Пересобираю backend/frontend уже из исходников форка"
+  "${COMPOSE_CMD[@]}" pull postgres || true
+  build_services_sequentially
+  "${COMPOSE_CMD[@]}" up -d --remove-orphans
+fi
 
 if ! check_containers_running 120; then
   "${COMPOSE_CMD[@]}" logs --tail=100
