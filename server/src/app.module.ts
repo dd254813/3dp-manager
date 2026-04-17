@@ -9,6 +9,7 @@ import { Setting } from './settings/entities/setting.entity';
 import { Domain } from './domains/entities/domain.entity';
 import { Subscription } from './subscriptions/entities/subscription.entity';
 import { Inbound } from './inbounds/entities/inbound.entity';
+import { XuiPanel } from './xui/entities/xui-panel.entity';
 import { XuiModule } from './xui/xui.module';
 import { InboundsModule } from './inbounds/inbounds.module';
 import { RotationModule } from './rotation/rotation.module';
@@ -41,7 +42,7 @@ import { SessionModule } from './session/session.module';
       username: process.env.DB_USERNAME,
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME,
-      entities: [Setting, Domain, Subscription, Inbound, Tunnel],
+      entities: [Setting, Domain, Subscription, Inbound, Tunnel, XuiPanel],
       synchronize: true,
     }),
     SessionModule,
