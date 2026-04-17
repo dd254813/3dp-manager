@@ -1,11 +1,27 @@
-import { Controller, Get, Post, Body, Logger } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Logger,
+  Param,
+  ParseIntPipe,
+  Post,
+  Put,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Setting } from './entities/setting.entity';
-import * as net from 'net';
-import * as dns from 'dns/promises';
-import { COUNTRIES } from './countries';
-import { XuiService } from 'src/xui/xui.service';
+import { XuiPanelsService } from '../xui/xui-panels.service';
+import { XuiService } from '../xui/xui.service';
+
+interface PanelBody {
+  name: string;
+  url: string;
+  login: string;
+  password: string;
+  isEnabled?: boolean;
+}
 
 @Controller('settings')
 export class SettingsController {
@@ -15,7 +31,43 @@ export class SettingsController {
     @InjectRepository(Setting)
     private settingsRepo: Repository<Setting>,
     private xuiService: XuiService,
+    private xuiPanelsService: XuiPanelsService,
   ) {}
+
+  @Get('panels')
+  findAllPanels() {
+    return this.xuiPanelsService.findAll();
+  }
+
+  @Post('panels/check')
+  async checkPanelConnection(
+    @Body() body: { url: string; login: string; password: string },
+  ) {
+    const success = await this.xuiService.checkConnection(
+      body.url,
+      body.login,
+      body.password,
+    );
+    return { success };
+  }
+
+  @Post('panels')
+  createPanel(@Body() body: PanelBody) {
+    return this.xuiPanelsService.create(body);
+  }
+
+  @Put('panels/:id')
+  updatePanel(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: Partial<PanelBody>,
+  ) {
+    return this.xuiPanelsService.update(id, body);
+  }
+
+  @Delete('panels/:id')
+  removePanel(@Param('id', ParseIntPipe) id: number) {
+    return this.xuiPanelsService.remove(id);
+  }
 
   @Get()
   async findAll() {
@@ -28,86 +80,44 @@ export class SettingsController {
 
   @Post('check')
   async checkConnection(
-    @Body() body: { xui_url: string; xui_login: string; xui_password: string },
+    @Body()
+    body: {
+      xui_url?: string;
+      xui_login?: string;
+      xui_password?: string;
+      url?: string;
+      login?: string;
+      password?: string;
+    },
   ) {
     const success = await this.xuiService.checkConnection(
-      body.xui_url,
-      body.xui_login,
-      body.xui_password,
+      body.url || body.xui_url || '',
+      body.login || body.xui_login || '',
+      body.password || body.xui_password || '',
     );
     return { success };
   }
 
   @Post()
   async update(@Body() settings: Record<string, string>) {
-    if (settings.xui_url) {
-      try {
-        const parsed = new URL(settings.xui_url);
-        settings['xui_host'] = parsed.hostname;
+    const blockedKeys = new Set([
+      'xui_url',
+      'xui_login',
+      'xui_password',
+      'xui_host',
+      'xui_ip',
+      'xui_geo_country',
+      'xui_geo_flag',
+    ]);
 
-        let address = '';
-        if (net.isIP(parsed.hostname) === 0) {
-          const result = await dns.lookup(parsed.hostname);
-          address = result.address;
-        } else {
-          address = parsed.hostname;
-        }
-
-        settings['xui_ip'] = address;
-        this.logger.log(
-          `Extracted host: ${parsed.hostname} from ${settings.xui_url}`,
-        );
-
-        if (address && address !== '127.0.0.1' && address !== 'localhost') {
-          try {
-            this.logger.log(`Определяем страну для IP: ${address}...`);
-            const geoRes = await fetch(`http://ip-api.com/json/${address}`);
-            const geoData = (await geoRes.json()) as {
-              status: string;
-              countryCode?: string;
-              country?: string;
-              message?: string;
-            };
-
-            if (geoData.status === 'success') {
-              const countryCode = geoData.countryCode;
-
-              const countryInfo = COUNTRIES.find((c) => c.code === countryCode);
-
-              if (countryInfo) {
-                const flagEmoji = countryInfo.emoji;
-
-                settings['xui_geo_country'] = countryInfo.name;
-                settings['xui_geo_flag'] = flagEmoji;
-
-                this.logger.log(
-                  `GeoIP Success: ${countryInfo.name} ${flagEmoji}`,
-                );
-              } else {
-                this.logger.warn(
-                  `Страна с кодом ${countryCode} не найдена в countries.ts`,
-                );
-                settings['xui_geo_country'] = geoData.country;
-                settings['xui_geo_flag'] = '';
-              }
-            } else {
-              this.logger.warn(
-                `GeoIP Error: ${(geoData as { message?: string }).message}`,
-              );
-            }
-          } catch (geoError) {
-            this.logger.error(
-              `Ошибка запроса к ip-api.com: ${(geoError as Error).message}`,
-            );
-          }
-        }
-      } catch {
-        this.logger.warn(`Не удалось извлечь хост из URL: ${settings.xui_url}`);
-      }
-    }
     for (const [key, value] of Object.entries(settings)) {
+      if (blockedKeys.has(key)) {
+        continue;
+      }
+
       await this.settingsRepo.save({ key, value });
     }
+
     this.logger.log('Settings saved to database');
     return { success: true };
   }
