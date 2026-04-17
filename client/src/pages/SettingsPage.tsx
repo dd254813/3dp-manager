@@ -1,7 +1,38 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Box, TextField, Button, Typography, Paper, Snackbar, Alert, Grid, Divider, InputAdornment, Stack, Chip, Tooltip, IconButton, useTheme, useMediaQuery, Dialog, DialogTitle, DialogContent, DialogActions, List, ListItem, FormControlLabel, Checkbox } from '@mui/material';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  Alert,
+  Box,
+  Button,
+  Checkbox,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  FormControlLabel,
+  Grid,
+  IconButton,
+  InputAdornment,
+  List,
+  ListItem,
+  Paper,
+  Snackbar,
+  Stack,
+  TextField,
+  Tooltip,
+  Typography,
+  useMediaQuery,
+  useTheme,
+} from '@mui/material';
+import {
+  Add,
+  CheckCircle,
+  PauseCircleFilled,
+  PlayCircleFilled,
+  Refresh,
+} from '@mui/icons-material';
 import api from '../api';
-import { CheckCircle, PauseCircleFilled, PlayCircleFilled, Refresh } from '@mui/icons-material';
 import { Logger } from '../utils/logger';
 
 const ROTATION_PRESETS = [
@@ -17,15 +48,33 @@ interface Subscription {
   isAutoRotationEnabled?: boolean;
 }
 
+interface XuiPanel {
+  id: number;
+  name: string;
+  url: string;
+  login: string;
+  password: string;
+  host?: string;
+  ip?: string;
+  geoCountry?: string;
+  geoFlag?: string;
+}
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState({
-    xui_url: '',
-    xui_login: '',
-    xui_password: '',
     rotation_interval: '30',
     rotation_status: 'active',
     last_rotation_timestamp: '',
   });
+  const [panels, setPanels] = useState<XuiPanel[]>([]);
+  const [panelDialog, setPanelDialog] = useState({ open: false, editingId: null as number | null });
+  const [panelForm, setPanelForm] = useState({
+    name: '',
+    url: '',
+    login: '',
+    password: '',
+  });
+  const [panelLoading, setPanelLoading] = useState(false);
 
   const [adminProfile, setAdminProfile] = useState({
     login: '',
@@ -37,8 +86,11 @@ export default function SettingsPage() {
   const [msg, setMsg] = useState({ open: false, type: 'success' as 'success' | 'error', text: '' });
   const [loadingRotate, setLoadingRotate] = useState<boolean>(false);
   const [confirmDialog, setConfirmDialog] = useState({
-    open: false, title: '', onConfirm: () => {},
-    confirmText: 'Удалить', confirmColor: 'error' as 'error' | 'primary'
+    open: false,
+    title: '',
+    onConfirm: () => {},
+    confirmText: 'Удалить',
+    confirmColor: 'error' as 'error' | 'primary',
   });
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -47,19 +99,30 @@ export default function SettingsPage() {
     try {
       Logger.debug('Loading settings...', 'Settings');
       const { data } = await api.get('/settings');
-      Logger.debug('Settings API response', 'Settings', data);
-      setSettings((prev) => ({ ...prev, ...data }));
-      Logger.debug('Settings after update', 'Settings', {
-        rotation_interval: data.rotation_interval,
-        prev_interval: prev => prev.rotation_interval
-      });
+      setSettings((prev) => ({
+        ...prev,
+        rotation_interval: data.rotation_interval || prev.rotation_interval,
+        rotation_status: data.rotation_status || prev.rotation_status,
+        last_rotation_timestamp: data.last_rotation_timestamp || '',
+      }));
 
       if (data.admin_login) {
         setAdminProfile((prev) => ({ ...prev, login: data.admin_login }));
       }
       Logger.debug('Settings loaded successfully', 'Settings');
     } catch (error) {
-      Logger.error('Failed to load', 'Settings', error);
+      Logger.error('Failed to load settings', 'Settings', error);
+    }
+  }, []);
+
+  const loadPanels = useCallback(async () => {
+    try {
+      Logger.debug('Loading xui panels...', 'Settings');
+      const { data } = await api.get('/settings/panels');
+      setPanels(data);
+      Logger.debug(`Loaded ${data.length} xui panels`, 'Settings');
+    } catch (error) {
+      Logger.error('Failed to load xui panels', 'Settings', error);
     }
   }, []);
 
@@ -76,8 +139,9 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadSettings();
+    loadPanels();
     loadSubscriptions();
-  }, [loadSettings, loadSubscriptions]);
+  }, [loadPanels, loadSettings, loadSubscriptions]);
 
   const getIntervalError = () => {
     const val = parseInt(settings.rotation_interval, 10);
@@ -87,93 +151,25 @@ export default function SettingsPage() {
     return '';
   };
 
-  const cleanData = () => {
-    const cleaned = { ...settings };
+  const normalizePanelData = useCallback((source = panelForm) => {
+    const normalized = {
+      ...source,
+      name: source.name.trim(),
+      url: source.url.trim().replace(/\/+$/, ''),
+      login: source.login.trim(),
+      password: source.password.trim(),
+    };
 
-    if (cleaned.xui_url) {
-      cleaned.xui_url = cleaned.xui_url.replace(/\/+$/, '');
-    }
-
-    if (cleaned.xui_login) cleaned.xui_login = cleaned.xui_login.trim();
-    if (cleaned.xui_password) cleaned.xui_password = cleaned.xui_password.trim();
-
-    setSettings(prev => ({ ...prev, ...cleaned }));
-
-    return cleaned;
-  };
-
-  const handleCheckConnection = async () => {
-    const data = cleanData();
-
-    try {
-      Logger.debug(`Checking connection to: ${data.xui_url}`, 'Settings');
-      setMsg({ open: true, type: 'success', text: 'Проверка...' });
-      const res = await api.post('/settings/check', {
-        xui_url: data.xui_url,
-        xui_login: data.xui_login,
-        xui_password: data.xui_password
-      });
-
-      if (res.data.success) {
-        Logger.debug('Connection check: SUCCESS', 'Settings');
-        setMsg({
-          open: true,
-          type: 'success',
-          text: 'Подключение успешно!'
-        });
-      } else {
-        Logger.warn('Connection check: FAILED', 'Settings', res.data);
-        setMsg({
-          open: true,
-          type: 'error',
-          text: 'Ошибка: Неверные данные или нет доступа'
-        });
-      }
-    } catch (error) {
-      Logger.error('Connection check error', 'Settings', error);
-      setMsg({ open: true, type: 'error', text: 'Ошибка сети при проверке' });
-    }
-  };
+    setPanelForm(normalized);
+    return normalized;
+  }, [panelForm]);
 
   const handleSettingChange = useCallback((prop: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSettings(prev => ({ ...prev, [prop]: event.target.value }));
+    setSettings((prev) => ({ ...prev, [prop]: event.target.value }));
   }, []);
 
   const handlePresetClick = (minutes: number) => {
-    setSettings(prev => ({ ...prev, rotation_interval: minutes.toString() }));
-  };
-
-  const handleSaveSettings = async () => {
-    // Валидация полей подключения к 3x-ui
-    if (!settings.xui_url || !settings.xui_login || !settings.xui_password) {
-      setMsg({
-        open: true,
-        text: 'Заполните все поля подключения к 3x-ui (URL, логин, пароль)',
-        type: 'error'
-      });
-      return;
-    }
-
-    if (getIntervalError()) {
-      setMsg({ open: true, text: 'Исправьте ошибки перед сохранением', type: 'error' });
-      return;
-    }
-
-    const data = cleanData();
-
-    try {
-      Logger.debug('Saving settings', 'Settings', {
-        xui_url: data.xui_url ? '***' : 'empty',
-        xui_login: data.xui_login,
-        rotation_interval: data.rotation_interval
-      });
-      await api.post('/settings', data);
-      Logger.debug('Settings saved successfully', 'Settings');
-      setMsg({ open: true, type: 'success', text: 'Настройки сохранены!' });
-    } catch (error) {
-      Logger.error('Save error', 'Settings', error);
-      setMsg({ open: true, type: 'error', text: 'Ошибка сохранения' });
-    }
+    setSettings((prev) => ({ ...prev, rotation_interval: minutes.toString() }));
   };
 
   const handleSaveInterval = async () => {
@@ -184,10 +180,10 @@ export default function SettingsPage() {
 
     try {
       Logger.debug('Saving rotation interval', 'Settings', {
-        rotation_interval: settings.rotation_interval
+        rotation_interval: settings.rotation_interval,
       });
       await api.post('/settings', {
-        rotation_interval: settings.rotation_interval
+        rotation_interval: settings.rotation_interval,
       });
       Logger.debug('Rotation interval saved successfully', 'Settings');
       setMsg({ open: true, type: 'success', text: 'Интервал генерации применён!' });
@@ -198,7 +194,7 @@ export default function SettingsPage() {
   };
 
   const handleAdminChange = useCallback((prop: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
-    setAdminProfile(prev => ({ ...prev, [prop]: event.target.value }));
+    setAdminProfile((prev) => ({ ...prev, [prop]: event.target.value }));
   }, []);
 
   const handleSaveAdmin = async () => {
@@ -206,8 +202,8 @@ export default function SettingsPage() {
       Logger.debug('Updating admin profile', 'Settings', { login: adminProfile.login });
       await api.post('/auth/update-profile', adminProfile);
       Logger.debug('Admin profile updated', 'Settings');
-      setMsg({ open: true, type: 'success', text: 'Профиль администратора обновлен!' });
-      setAdminProfile(prev => ({ ...prev, password: '' }));
+      setMsg({ open: true, type: 'success', text: 'Профиль администратора обновлён!' });
+      setAdminProfile((prev) => ({ ...prev, password: '' }));
     } catch (error) {
       Logger.error('Update admin profile error', 'Settings', error);
       setMsg({ open: true, type: 'error', text: 'Ошибка обновления профиля' });
@@ -230,12 +226,13 @@ export default function SettingsPage() {
           if (res.data && res.data.success) {
             Logger.debug('Rotation completed successfully', 'Rotation');
             setMsg({ open: true, type: 'success', text: res.data.message || 'Ротация успешно выполнена!' });
+            loadSubscriptions();
           } else {
             Logger.warn('Rotation completed with issues', 'Rotation', res.data?.message);
             setMsg({
               open: true,
               type: 'error',
-              text: res.data?.message || 'Ошибка выполнения ротации'
+              text: res.data?.message || 'Ошибка выполнения ротации',
             });
           }
         } catch (error) {
@@ -243,7 +240,7 @@ export default function SettingsPage() {
           Logger.error('Rotation error', 'Rotation', error);
           setMsg({ open: true, type: 'error', text: 'Ошибка сети или сервера' });
         }
-      }
+      },
     });
   };
 
@@ -251,15 +248,15 @@ export default function SettingsPage() {
     try {
       await api.put('/subscriptions/bulk-auto-rotation', {
         subscriptionIds: [subscriptionId],
-        enabled
+        enabled,
       });
-      setSubs(prev => prev.map(s =>
-        s.id === subscriptionId ? { ...s, isAutoRotationEnabled: enabled } : s
+      setSubs((prev) => prev.map((s) =>
+        s.id === subscriptionId ? { ...s, isAutoRotationEnabled: enabled } : s,
       ));
       setMsg({
         open: true,
         type: 'success',
-        text: enabled ? 'Авторотация включена' : 'Авторотация выключена'
+        text: enabled ? 'Авторотация включена' : 'Авторотация выключена',
       });
     } catch (error: unknown) {
       const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Ошибка обновления';
@@ -287,15 +284,15 @@ export default function SettingsPage() {
           Logger.error(`Manual rotation error: ${message}`, 'Settings');
           setMsg({ open: true, type: 'error', text: message });
         }
-      }
+      },
     });
   };
 
   const handleBulkUpdate = async (enabled: boolean) => {
     try {
       const { data } = await api.put('/subscriptions/bulk-auto-rotation', {
-        subscriptionIds: subs.map(s => s.id),
-        enabled
+        subscriptionIds: subs.map((s) => s.id),
+        enabled,
       });
       setMsg({ open: true, type: 'success', text: data.message || 'Настройки обновлены' });
       loadSubscriptions();
@@ -307,18 +304,18 @@ export default function SettingsPage() {
   };
 
   const togglePause = async () => {
-    const newStatus = settings.rotation_status === 'active' ? 'stopped' : 'active';
-    const updatedSettings = { ...settings, rotation_status: newStatus };
+    const previousStatus = settings.rotation_status;
+    const newStatus = previousStatus === 'active' ? 'stopped' : 'active';
 
-    Logger.debug(`Toggling rotation status: ${settings.rotation_status} → ${newStatus}`, 'Settings');
-    setSettings(updatedSettings);
+    Logger.debug(`Toggling rotation status: ${previousStatus} → ${newStatus}`, 'Settings');
+    setSettings((prev) => ({ ...prev, rotation_status: newStatus }));
 
     try {
-      await api.post('/settings', updatedSettings);
+      await api.post('/settings', { rotation_status: newStatus });
       Logger.debug('Rotation status updated', 'Settings');
     } catch (error) {
       Logger.error('Toggle pause error', 'Settings', error);
-      setSettings((prev) => ({ ...prev, rotation_status: prev.rotation_status }));
+      setSettings((prev) => ({ ...prev, rotation_status: previousStatus }));
       setMsg({ open: true, type: 'error', text: 'Не удалось изменить статус' });
     }
   };
@@ -326,7 +323,11 @@ export default function SettingsPage() {
   const formatDate = (isoString: string) => {
     if (!isoString) return 'Нет данных';
     return new Date(+isoString).toLocaleString('ru-RU', {
-      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   };
 
@@ -335,11 +336,128 @@ export default function SettingsPage() {
     if (!settings.last_rotation_timestamp) return 'Ожидание...';
 
     const last = new Date(+settings.last_rotation_timestamp);
-    const intervalMinutes = parseInt(settings.rotation_interval) || 60;
+    const intervalMinutes = parseInt(settings.rotation_interval, 10) || 60;
     const next = new Date(last.getTime() + intervalMinutes * 60000);
 
     return next.toLocaleString('ru-RU', {
-      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const openCreatePanel = () => {
+    setPanelDialog({ open: true, editingId: null });
+    setPanelForm({ name: '', url: '', login: '', password: '' });
+  };
+
+  const openEditPanel = (panel: XuiPanel) => {
+    setPanelDialog({ open: true, editingId: panel.id });
+    setPanelForm({
+      name: panel.name,
+      url: panel.url,
+      login: panel.login,
+      password: panel.password,
+    });
+  };
+
+  const handlePanelChange = useCallback((prop: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
+    setPanelForm((prev) => ({ ...prev, [prop]: event.target.value }));
+  }, []);
+
+  const handleCheckPanelConnection = async (panel?: XuiPanel) => {
+    const data = panel
+      ? {
+          name: panel.name,
+          url: panel.url.trim().replace(/\/+$/, ''),
+          login: panel.login.trim(),
+          password: panel.password.trim(),
+        }
+      : normalizePanelData();
+
+    if (!data.url || !data.login || !data.password) {
+      setMsg({
+        open: true,
+        type: 'error',
+        text: 'Заполните URL, логин и пароль панели',
+      });
+      return;
+    }
+
+    try {
+      setPanelLoading(true);
+      const res = await api.post('/settings/panels/check', {
+        url: data.url,
+        login: data.login,
+        password: data.password,
+      });
+
+      setPanelLoading(false);
+      if (res.data.success) {
+        setMsg({ open: true, type: 'success', text: 'Подключение успешно!' });
+      } else {
+        setMsg({ open: true, type: 'error', text: 'Ошибка: неверные данные или нет доступа' });
+      }
+    } catch (error) {
+      setPanelLoading(false);
+      Logger.error('Connection check error', 'Settings', error);
+      setMsg({ open: true, type: 'error', text: 'Ошибка сети при проверке' });
+    }
+  };
+
+  const handleSavePanel = async () => {
+    const data = normalizePanelData();
+
+    if (!data.name || !data.url || !data.login || !data.password) {
+      setMsg({
+        open: true,
+        type: 'error',
+        text: 'Заполните все поля панели 3x-ui',
+      });
+      return;
+    }
+
+    try {
+      setPanelLoading(true);
+      if (panelDialog.editingId) {
+        await api.put(`/settings/panels/${panelDialog.editingId}`, data);
+        setMsg({ open: true, type: 'success', text: 'Панель обновлена' });
+      } else {
+        await api.post('/settings/panels', data);
+        setMsg({ open: true, type: 'success', text: 'Панель добавлена' });
+      }
+
+      setPanelLoading(false);
+      setPanelDialog({ open: false, editingId: null });
+      setPanelForm({ name: '', url: '', login: '', password: '' });
+      loadPanels();
+    } catch (error: unknown) {
+      setPanelLoading(false);
+      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Ошибка сохранения панели';
+      Logger.error(`Save panel error: ${message}`, 'Settings');
+      setMsg({ open: true, type: 'error', text: message });
+    }
+  };
+
+  const handleDeletePanel = (panel: XuiPanel) => {
+    setConfirmDialog({
+      open: true,
+      title: `Удалить панель "${panel.name}"?`,
+      confirmText: 'Удалить',
+      confirmColor: 'error',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/settings/panels/${panel.id}`);
+          setMsg({ open: true, type: 'success', text: 'Панель удалена' });
+          loadPanels();
+        } catch (error: unknown) {
+          const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Ошибка удаления панели';
+          Logger.error(`Delete panel error: ${message}`, 'Settings');
+          setMsg({ open: true, type: 'error', text: message });
+        }
+      },
     });
   };
 
@@ -350,7 +468,6 @@ export default function SettingsPage() {
       <Typography variant={isMobile ? 'h5' : 'h4'} gutterBottom>Настройки утилиты</Typography>
 
       <Grid container spacing={3}>
-
         <Grid size={{ xs: 12 }}>
           <Grid container spacing={1}>
             <Grid size={{ xs: 12, md: 4 }}>
@@ -362,7 +479,7 @@ export default function SettingsPage() {
                 <Chip icon={<CheckCircle />} label="Активен" color="success" size="small" variant="outlined" />
               }
 
-              <Tooltip title={isPaused ? "Возобновить ротацию" : "Поставить на паузу"}>
+              <Tooltip title={isPaused ? 'Возобновить ротацию' : 'Поставить на паузу'}>
                 <IconButton
                   onClick={togglePause}
                   size="small"
@@ -370,14 +487,13 @@ export default function SettingsPage() {
                     bgcolor: 'background.paper',
                     boxShadow: 2,
                     '&:hover': { bgcolor: 'background.paper' },
-                    ml: 1
+                    ml: 1,
                   }}
                 >
                   {isPaused ? <PlayCircleFilled fontSize="large" /> : <PauseCircleFilled fontSize="large" />}
                 </IconButton>
               </Tooltip>
             </Grid>
-            {/* Последняя генерация */}
             <Grid size={{ xs: 12, md: 4 }}>
               <Stack direction="row" alignItems="center" spacing={1}>
                 <Box>
@@ -390,8 +506,6 @@ export default function SettingsPage() {
                 </Box>
               </Stack>
             </Grid>
-
-            {/* Следующая генерация */}
             <Grid size={{ xs: 12, md: 4 }}>
               <Stack direction="row" alignItems="center" spacing={1}>
                 <Box>
@@ -409,64 +523,109 @@ export default function SettingsPage() {
 
         <Grid size={{ xs: 12, md: 6 }}>
           <Paper sx={{ p: 3, height: '100%' }}>
-            <Typography variant="h6" gutterBottom>Панель 3x-ui</Typography>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+              <Typography variant="h6">Панели 3x-ui</Typography>
+              <Button variant="contained" size="small" startIcon={<Add />} onClick={openCreatePanel}>
+                Добавить
+              </Button>
+            </Stack>
             <Divider sx={{ mb: 2 }} />
 
-            <TextField
-              fullWidth margin="normal" label="URL панели"
-              value={settings.xui_url} onChange={handleSettingChange('xui_url')}
-              helperText="Например: https://my-vpn.com:2053/wfgpoVHaOF"
-            />
-            <TextField
-              fullWidth margin="normal" label="Логин 3x-ui"
-              value={settings.xui_login} onChange={handleSettingChange('xui_login')}
-            />
-            <TextField
-              fullWidth margin="normal" label="Пароль 3x-ui" type="password"
-              value={settings.xui_password} onChange={handleSettingChange('xui_password')}
-            />
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+              Можно добавить несколько панелей с разных серверов. Первая панель используется как основная для раздела перенаправления.
+            </Typography>
 
-            <Button variant="contained" sx={{ mt: 2 }} onClick={handleSaveSettings}>
-              Сохранить подключение
-            </Button>
-            {settings.xui_url && settings.xui_login && settings.xui_password && (
-              <Button
-                variant="outlined"
-                color="info"
-                sx={{ mt: 2, ml: isMobile ? 1 : 2 }}
-                onClick={handleCheckConnection}
-              >
-                Проверить
-              </Button>
+            {panels.length === 0 ? (
+              <Typography variant="body2" color="textSecondary">
+                Панели 3x-ui пока не добавлены
+              </Typography>
+            ) : (
+              <List sx={{ p: 0 }}>
+                {panels.map((panel) => (
+                  <ListItem
+                    key={panel.id}
+                    sx={{
+                      px: 0,
+                      py: 1.5,
+                      borderBottom: '1px solid',
+                      borderColor: 'divider',
+                      '&:last-child': { borderBottom: 'none' },
+                    }}
+                  >
+                    <Box sx={{ width: '100%' }}>
+                      <Stack
+                        direction={isMobile ? 'column' : 'row'}
+                        justifyContent="space-between"
+                        alignItems={isMobile ? 'flex-start' : 'center'}
+                        spacing={2}
+                      >
+                        <Box>
+                          <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5, flexWrap: 'wrap' }}>
+                            <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                              {panel.name}
+                            </Typography>
+                            {(panel.geoFlag || panel.geoCountry) && (
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                label={`${panel.geoFlag || ''} ${panel.geoCountry || ''}`.trim()}
+                              />
+                            )}
+                          </Stack>
+                          <Typography variant="body2" color="textSecondary">
+                            {panel.url}
+                          </Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            {[panel.host, panel.ip].filter(Boolean).join(' • ')}
+                          </Typography>
+                        </Box>
+
+                        <Stack direction={isMobile ? 'column' : 'row'} spacing={1}>
+                          <Button size="small" onClick={() => handleCheckPanelConnection(panel)}>
+                            Проверить
+                          </Button>
+                          <Button size="small" onClick={() => openEditPanel(panel)}>
+                            Изменить
+                          </Button>
+                          <Button size="small" color="error" onClick={() => handleDeletePanel(panel)}>
+                            Удалить
+                          </Button>
+                        </Stack>
+                      </Stack>
+                    </Box>
+                  </ListItem>
+                ))}
+              </List>
             )}
           </Paper>
         </Grid>
 
         <Grid size={{ xs: 12, md: 6 }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-
             <Paper sx={{ p: 3 }}>
               <Typography variant="h6" gutterBottom>Генерация инбаундов</Typography>
               <Divider sx={{ mb: 2 }} />
 
               <TextField
-                fullWidth margin="normal" label="Интервал генерации"
+                fullWidth
+                margin="normal"
+                label="Интервал генерации"
                 type="number"
                 value={settings.rotation_interval}
                 onChange={handleSettingChange('rotation_interval')}
                 slotProps={{
-                  input: { endAdornment: <InputAdornment position="end">мин</InputAdornment> }
+                  input: { endAdornment: <InputAdornment position="end">мин</InputAdornment> },
                 }}
                 helperText="Как часто менять инбаунды (минимум 10 мин)"
               />
-              <Stack direction="row" spacing={1} sx={{ mt: 1, mb: 2 }}>
+              <Stack direction="row" spacing={1} sx={{ mt: 1, mb: 2, flexWrap: 'wrap' }}>
                 {ROTATION_PRESETS.map((preset) => (
                   <Chip
                     key={preset.value}
                     label={preset.label}
                     onClick={() => handlePresetClick(preset.value)}
-                    color={settings.rotation_interval === preset.value.toString() ? "primary" : "default"}
-                    variant={settings.rotation_interval === preset.value.toString() ? "filled" : "outlined"}
+                    color={settings.rotation_interval === preset.value.toString() ? 'primary' : 'default'}
+                    variant={settings.rotation_interval === preset.value.toString() ? 'filled' : 'outlined'}
                     clickable
                   />
                 ))}
@@ -499,14 +658,14 @@ export default function SettingsPage() {
                 </Typography>
               ) : (
                 <List sx={{ maxHeight: 400, overflow: 'auto', bgcolor: 'background.default', borderRadius: 1 }}>
-                  {subs.map(sub => (
+                  {subs.map((sub) => (
                     <ListItem
                       key={sub.id}
                       sx={{
                         py: 1,
                         borderBottom: '1px solid',
                         borderColor: 'divider',
-                        '&:last-child': { borderBottom: 'none' }
+                        '&:last-child': { borderBottom: 'none' },
                       }}
                     >
                       <FormControlLabel
@@ -528,11 +687,7 @@ export default function SettingsPage() {
                         sx={{ flexGrow: 1 }}
                       />
                       <Tooltip title="Обновить подписку вручную">
-                        <IconButton
-                          size="small"
-                          onClick={() => handleManualRotate(sub)}
-                          color="primary"
-                        >
+                        <IconButton size="small" onClick={() => handleManualRotate(sub)} color="primary">
                           <Refresh />
                         </IconButton>
                       </Tooltip>
@@ -542,19 +697,11 @@ export default function SettingsPage() {
               )}
 
               {subs.length > 0 && (
-                <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={() => handleBulkUpdate(true)}
-                  >
+                <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                  <Button variant="outlined" size="small" onClick={() => handleBulkUpdate(true)}>
                     Включить для всех
                   </Button>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={() => handleBulkUpdate(false)}
-                  >
+                  <Button variant="outlined" size="small" onClick={() => handleBulkUpdate(false)}>
                     Выключить для всех
                   </Button>
                 </Box>
@@ -566,12 +713,17 @@ export default function SettingsPage() {
               <Divider sx={{ mb: 2 }} />
 
               <TextField
-                fullWidth margin="normal" label="Логин администратора"
+                fullWidth
+                margin="normal"
+                label="Логин администратора"
                 value={adminProfile.login}
                 onChange={handleAdminChange('login')}
               />
               <TextField
-                fullWidth margin="normal" label="Новый пароль" type="password"
+                fullWidth
+                margin="normal"
+                label="Новый пароль"
+                type="password"
                 value={adminProfile.password}
                 onChange={handleAdminChange('password')}
                 helperText="Оставьте пустым, если не хотите менять"
@@ -580,10 +732,61 @@ export default function SettingsPage() {
                 Обновить профиль
               </Button>
             </Paper>
-
           </Box>
         </Grid>
       </Grid>
+
+      <Dialog
+        open={panelDialog.open}
+        onClose={() => setPanelDialog({ open: false, editingId: null })}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>
+          {panelDialog.editingId ? 'Редактировать панель 3x-ui' : 'Новая панель 3x-ui'}
+        </DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            margin="dense"
+            label="Название панели"
+            value={panelForm.name}
+            onChange={handlePanelChange('name')}
+          />
+          <TextField
+            fullWidth
+            margin="dense"
+            label="URL панели"
+            value={panelForm.url}
+            onChange={handlePanelChange('url')}
+            helperText="Например: https://my-vpn.com:2053/wfgpoVHaOF"
+          />
+          <TextField
+            fullWidth
+            margin="dense"
+            label="Логин 3x-ui"
+            value={panelForm.login}
+            onChange={handlePanelChange('login')}
+          />
+          <TextField
+            fullWidth
+            margin="dense"
+            label="Пароль 3x-ui"
+            type="password"
+            value={panelForm.password}
+            onChange={handlePanelChange('password')}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPanelDialog({ open: false, editingId: null })}>Отмена</Button>
+          <Button onClick={() => handleCheckPanelConnection()} disabled={panelLoading}>
+            Проверить
+          </Button>
+          <Button variant="contained" onClick={handleSavePanel} disabled={panelLoading}>
+            Сохранить
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar open={msg.open} autoHideDuration={5000} onClose={() => setMsg({ ...msg, open: false })}>
         <Alert severity={msg.type}>{msg.text}</Alert>
