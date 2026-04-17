@@ -21,6 +21,12 @@ interface PanelBody {
   login: string;
   password: string;
   isEnabled?: boolean;
+  hysteriaEnabled?: boolean;
+  hysteriaHost?: string;
+  hysteriaPort?: number | string | null;
+  hysteriaPassword?: string;
+  hysteriaObfsPassword?: string;
+  hysteriaSni?: string;
 }
 
 @Controller('settings')
