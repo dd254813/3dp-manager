@@ -58,7 +58,26 @@ interface XuiPanel {
   ip?: string;
   geoCountry?: string;
   geoFlag?: string;
+  hysteriaEnabled?: boolean;
+  hysteriaHost?: string | null;
+  hysteriaPort?: number | null;
+  hysteriaPassword?: string | null;
+  hysteriaObfsPassword?: string | null;
+  hysteriaSni?: string | null;
 }
+
+const EMPTY_PANEL_FORM = {
+  name: '',
+  url: '',
+  login: '',
+  password: '',
+  hysteriaEnabled: false,
+  hysteriaHost: '',
+  hysteriaPort: '',
+  hysteriaPassword: '',
+  hysteriaObfsPassword: '',
+  hysteriaSni: '',
+};
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState({
@@ -67,13 +86,11 @@ export default function SettingsPage() {
     last_rotation_timestamp: '',
   });
   const [panels, setPanels] = useState<XuiPanel[]>([]);
-  const [panelDialog, setPanelDialog] = useState({ open: false, editingId: null as number | null });
-  const [panelForm, setPanelForm] = useState({
-    name: '',
-    url: '',
-    login: '',
-    password: '',
+  const [panelDialog, setPanelDialog] = useState({
+    open: false,
+    editingId: null as number | null,
   });
+  const [panelForm, setPanelForm] = useState(EMPTY_PANEL_FORM);
   const [panelLoading, setPanelLoading] = useState(false);
 
   const [adminProfile, setAdminProfile] = useState({
@@ -83,7 +100,11 @@ export default function SettingsPage() {
 
   const [subs, setSubs] = useState<Subscription[]>([]);
 
-  const [msg, setMsg] = useState({ open: false, type: 'success' as 'success' | 'error', text: '' });
+  const [msg, setMsg] = useState({
+    open: false,
+    type: 'success' as 'success' | 'error',
+    text: '',
+  });
   const [loadingRotate, setLoadingRotate] = useState<boolean>(false);
   const [confirmDialog, setConfirmDialog] = useState({
     open: false,
@@ -151,22 +172,38 @@ export default function SettingsPage() {
     return '';
   };
 
-  const normalizePanelData = useCallback((source = panelForm) => {
-    const normalized = {
-      ...source,
-      name: source.name.trim(),
-      url: source.url.trim().replace(/\/+$/, ''),
-      login: source.login.trim(),
-      password: source.password.trim(),
-    };
+  const normalizePanelData = useCallback(
+    (source = panelForm) => {
+      const normalized = {
+        ...source,
+        name: source.name.trim(),
+        url: source.url.trim().replace(/\/+$/, ''),
+        login: source.login.trim(),
+        password: source.password.trim(),
+        hysteriaHost: source.hysteriaHost.trim(),
+        hysteriaPort: source.hysteriaPort.trim(),
+        hysteriaPassword: source.hysteriaPassword.trim(),
+        hysteriaObfsPassword: source.hysteriaObfsPassword.trim(),
+        hysteriaSni: source.hysteriaSni.trim(),
+      };
 
-    setPanelForm(normalized);
-    return normalized;
-  }, [panelForm]);
+      setPanelForm(normalized);
+      return normalized;
+    },
+    [panelForm],
+  );
 
-  const handleSettingChange = useCallback((prop: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSettings((prev) => ({ ...prev, [prop]: event.target.value }));
+  const resetPanelForm = useCallback(() => {
+    setPanelForm(EMPTY_PANEL_FORM);
   }, []);
+
+  const handleSettingChange =
+    useCallback(
+      (prop: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
+        setSettings((prev) => ({ ...prev, [prop]: event.target.value }));
+      },
+      [],
+    );
 
   const handlePresetClick = (minutes: number) => {
     setSettings((prev) => ({ ...prev, rotation_interval: minutes.toString() }));
@@ -174,7 +211,11 @@ export default function SettingsPage() {
 
   const handleSaveInterval = async () => {
     if (getIntervalError()) {
-      setMsg({ open: true, text: 'Неверный интервал (минимум 10 минут)', type: 'error' });
+      setMsg({
+        open: true,
+        text: 'Неверный интервал (минимум 10 минут)',
+        type: 'error',
+      });
       return;
     }
 
@@ -186,34 +227,57 @@ export default function SettingsPage() {
         rotation_interval: settings.rotation_interval,
       });
       Logger.debug('Rotation interval saved successfully', 'Settings');
-      setMsg({ open: true, type: 'success', text: 'Интервал генерации применён!' });
+      setMsg({
+        open: true,
+        type: 'success',
+        text: 'Интервал генерации применён!',
+      });
     } catch (error) {
       Logger.error('Save interval error', 'Settings', error);
-      setMsg({ open: true, type: 'error', text: 'Ошибка сохранения интервала' });
+      setMsg({
+        open: true,
+        type: 'error',
+        text: 'Ошибка сохранения интервала',
+      });
     }
   };
 
-  const handleAdminChange = useCallback((prop: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
-    setAdminProfile((prev) => ({ ...prev, [prop]: event.target.value }));
-  }, []);
+  const handleAdminChange =
+    useCallback(
+      (prop: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
+        setAdminProfile((prev) => ({ ...prev, [prop]: event.target.value }));
+      },
+      [],
+    );
 
   const handleSaveAdmin = async () => {
     try {
-      Logger.debug('Updating admin profile', 'Settings', { login: adminProfile.login });
+      Logger.debug('Updating admin profile', 'Settings', {
+        login: adminProfile.login,
+      });
       await api.post('/auth/update-profile', adminProfile);
       Logger.debug('Admin profile updated', 'Settings');
-      setMsg({ open: true, type: 'success', text: 'Профиль администратора обновлён!' });
+      setMsg({
+        open: true,
+        type: 'success',
+        text: 'Профиль администратора обновлён!',
+      });
       setAdminProfile((prev) => ({ ...prev, password: '' }));
     } catch (error) {
       Logger.error('Update admin profile error', 'Settings', error);
-      setMsg({ open: true, type: 'error', text: 'Ошибка обновления профиля' });
+      setMsg({
+        open: true,
+        type: 'error',
+        text: 'Ошибка обновления профиля',
+      });
     }
   };
 
   const handleForceRotate = async () => {
     setConfirmDialog({
       open: true,
-      title: 'ВНИМАНИЕ: Это немедленно обновит конфиги в подписках.\n\nИнтервал автоматической ротации НЕ будет сброшен.\n\nПродолжить?',
+      title:
+        'ВНИМАНИЕ: Это немедленно обновит конфиги в подписках.\n\nИнтервал автоматической ротации НЕ будет сброшен.\n\nПродолжить?',
       confirmText: 'Сгенерировать',
       confirmColor: 'primary',
       onConfirm: async () => {
@@ -225,7 +289,11 @@ export default function SettingsPage() {
           setLoadingRotate(false);
           if (res.data && res.data.success) {
             Logger.debug('Rotation completed successfully', 'Rotation');
-            setMsg({ open: true, type: 'success', text: res.data.message || 'Ротация успешно выполнена!' });
+            setMsg({
+              open: true,
+              type: 'success',
+              text: res.data.message || 'Ротация успешно выполнена!',
+            });
             loadSubscriptions();
           } else {
             Logger.warn('Rotation completed with issues', 'Rotation', res.data?.message);
@@ -238,28 +306,41 @@ export default function SettingsPage() {
         } catch (error) {
           setLoadingRotate(false);
           Logger.error('Rotation error', 'Rotation', error);
-          setMsg({ open: true, type: 'error', text: 'Ошибка сети или сервера' });
+          setMsg({
+            open: true,
+            type: 'error',
+            text: 'Ошибка сети или сервера',
+          });
         }
       },
     });
   };
 
-  const handleToggleAutoRotation = async (subscriptionId: string, enabled: boolean) => {
+  const handleToggleAutoRotation = async (
+    subscriptionId: string,
+    enabled: boolean,
+  ) => {
     try {
       await api.put('/subscriptions/bulk-auto-rotation', {
         subscriptionIds: [subscriptionId],
         enabled,
       });
-      setSubs((prev) => prev.map((s) =>
-        s.id === subscriptionId ? { ...s, isAutoRotationEnabled: enabled } : s,
-      ));
+      setSubs((prev) =>
+        prev.map((s) =>
+          s.id === subscriptionId
+            ? { ...s, isAutoRotationEnabled: enabled }
+            : s,
+        ),
+      );
       setMsg({
         open: true,
         type: 'success',
         text: enabled ? 'Авторотация включена' : 'Авторотация выключена',
       });
     } catch (error: unknown) {
-      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Ошибка обновления';
+      const message =
+        (error as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message || 'Ошибка обновления';
       Logger.error(`Toggle auto-rotation error: ${message}`, 'Settings');
       setMsg({ open: true, type: 'error', text: message });
       loadSubscriptions();
@@ -274,13 +355,22 @@ export default function SettingsPage() {
       confirmColor: 'primary',
       onConfirm: async () => {
         try {
-          Logger.debug(`Starting manual rotation for subscription: ${sub.id}`, 'Settings');
+          Logger.debug(
+            `Starting manual rotation for subscription: ${sub.id}`,
+            'Settings',
+          );
           const res = await api.post(`/rotation/rotate-one/${sub.id}`);
           Logger.debug('Manual rotation completed', 'Settings');
-          setMsg({ open: true, type: 'success', text: res.data.message || 'Ротация выполнена' });
+          setMsg({
+            open: true,
+            type: 'success',
+            text: res.data.message || 'Ротация выполнена',
+          });
           loadSubscriptions();
         } catch (error: unknown) {
-          const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Ошибка ротации';
+          const message =
+            (error as { response?: { data?: { message?: string } } })?.response?.data
+              ?.message || 'Ошибка ротации';
           Logger.error(`Manual rotation error: ${message}`, 'Settings');
           setMsg({ open: true, type: 'error', text: message });
         }
@@ -294,10 +384,16 @@ export default function SettingsPage() {
         subscriptionIds: subs.map((s) => s.id),
         enabled,
       });
-      setMsg({ open: true, type: 'success', text: data.message || 'Настройки обновлены' });
+      setMsg({
+        open: true,
+        type: 'success',
+        text: data.message || 'Настройки обновлены',
+      });
       loadSubscriptions();
     } catch (error: unknown) {
-      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Ошибка обновления';
+      const message =
+        (error as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message || 'Ошибка обновления';
       Logger.error(`Bulk update error: ${message}`, 'Settings');
       setMsg({ open: true, type: 'error', text: message });
     }
@@ -307,7 +403,10 @@ export default function SettingsPage() {
     const previousStatus = settings.rotation_status;
     const newStatus = previousStatus === 'active' ? 'stopped' : 'active';
 
-    Logger.debug(`Toggling rotation status: ${previousStatus} → ${newStatus}`, 'Settings');
+    Logger.debug(
+      `Toggling rotation status: ${previousStatus} → ${newStatus}`,
+      'Settings',
+    );
     setSettings((prev) => ({ ...prev, rotation_status: newStatus }));
 
     try {
@@ -316,7 +415,11 @@ export default function SettingsPage() {
     } catch (error) {
       Logger.error('Toggle pause error', 'Settings', error);
       setSettings((prev) => ({ ...prev, rotation_status: previousStatus }));
-      setMsg({ open: true, type: 'error', text: 'Не удалось изменить статус' });
+      setMsg({
+        open: true,
+        type: 'error',
+        text: 'Не удалось изменить статус',
+      });
     }
   };
 
@@ -350,7 +453,7 @@ export default function SettingsPage() {
 
   const openCreatePanel = () => {
     setPanelDialog({ open: true, editingId: null });
-    setPanelForm({ name: '', url: '', login: '', password: '' });
+    resetPanelForm();
   };
 
   const openEditPanel = (panel: XuiPanel) => {
@@ -360,17 +463,30 @@ export default function SettingsPage() {
       url: panel.url,
       login: panel.login,
       password: panel.password,
+      hysteriaEnabled: panel.hysteriaEnabled || false,
+      hysteriaHost: panel.hysteriaHost || '',
+      hysteriaPort: panel.hysteriaPort?.toString() || '',
+      hysteriaPassword: panel.hysteriaPassword || '',
+      hysteriaObfsPassword: panel.hysteriaObfsPassword || '',
+      hysteriaSni: panel.hysteriaSni || '',
     });
   };
 
-  const handlePanelChange = useCallback((prop: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
-    setPanelForm((prev) => ({ ...prev, [prop]: event.target.value }));
-  }, []);
+  const handlePanelChange =
+    useCallback(
+      (prop: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
+        const value =
+          prop === 'hysteriaEnabled'
+            ? event.target.checked
+            : event.target.value;
+        setPanelForm((prev) => ({ ...prev, [prop]: value }));
+      },
+      [],
+    );
 
   const handleCheckPanelConnection = async (panel?: XuiPanel) => {
     const data = panel
       ? {
-          name: panel.name,
           url: panel.url.trim().replace(/\/+$/, ''),
           login: panel.login.trim(),
           password: panel.password.trim(),
@@ -398,17 +514,28 @@ export default function SettingsPage() {
       if (res.data.success) {
         setMsg({ open: true, type: 'success', text: 'Подключение успешно!' });
       } else {
-        setMsg({ open: true, type: 'error', text: 'Ошибка: неверные данные или нет доступа' });
+        setMsg({
+          open: true,
+          type: 'error',
+          text: 'Ошибка: неверные данные или нет доступа',
+        });
       }
     } catch (error) {
       setPanelLoading(false);
       Logger.error('Connection check error', 'Settings', error);
-      setMsg({ open: true, type: 'error', text: 'Ошибка сети при проверке' });
+      setMsg({
+        open: true,
+        type: 'error',
+        text: 'Ошибка сети при проверке',
+      });
     }
   };
 
   const handleSavePanel = async () => {
     const data = normalizePanelData();
+    const hysteriaPort = data.hysteriaEnabled
+      ? parseInt(data.hysteriaPort, 10)
+      : null;
 
     if (!data.name || !data.url || !data.login || !data.password) {
       setMsg({
@@ -419,23 +546,72 @@ export default function SettingsPage() {
       return;
     }
 
+    if (data.hysteriaEnabled) {
+      if (
+        !data.hysteriaHost ||
+        !data.hysteriaPort ||
+        !data.hysteriaPassword ||
+        !data.hysteriaObfsPassword
+      ) {
+        setMsg({
+          open: true,
+          type: 'error',
+          text: 'Для Hysteria2 заполните host, порт, пароль и obfs пароль',
+        });
+        return;
+      }
+
+      if (
+        Number.isNaN(hysteriaPort) ||
+        !hysteriaPort ||
+        hysteriaPort <= 0 ||
+        hysteriaPort > 65535
+      ) {
+        setMsg({
+          open: true,
+          type: 'error',
+          text: 'Некорректный порт Hysteria2',
+        });
+        return;
+      }
+    }
+
+    const payload = {
+      name: data.name,
+      url: data.url,
+      login: data.login,
+      password: data.password,
+      hysteriaEnabled: data.hysteriaEnabled,
+      hysteriaHost: data.hysteriaEnabled ? data.hysteriaHost || null : null,
+      hysteriaPort: data.hysteriaEnabled ? hysteriaPort : null,
+      hysteriaPassword: data.hysteriaEnabled
+        ? data.hysteriaPassword || null
+        : null,
+      hysteriaObfsPassword: data.hysteriaEnabled
+        ? data.hysteriaObfsPassword || null
+        : null,
+      hysteriaSni: data.hysteriaEnabled ? data.hysteriaSni || null : null,
+    };
+
     try {
       setPanelLoading(true);
       if (panelDialog.editingId) {
-        await api.put(`/settings/panels/${panelDialog.editingId}`, data);
+        await api.put(`/settings/panels/${panelDialog.editingId}`, payload);
         setMsg({ open: true, type: 'success', text: 'Панель обновлена' });
       } else {
-        await api.post('/settings/panels', data);
+        await api.post('/settings/panels', payload);
         setMsg({ open: true, type: 'success', text: 'Панель добавлена' });
       }
 
       setPanelLoading(false);
       setPanelDialog({ open: false, editingId: null });
-      setPanelForm({ name: '', url: '', login: '', password: '' });
+      resetPanelForm();
       loadPanels();
     } catch (error: unknown) {
       setPanelLoading(false);
-      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Ошибка сохранения панели';
+      const message =
+        (error as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message || 'Ошибка сохранения панели';
       Logger.error(`Save panel error: ${message}`, 'Settings');
       setMsg({ open: true, type: 'error', text: message });
     }
@@ -453,7 +629,9 @@ export default function SettingsPage() {
           setMsg({ open: true, type: 'success', text: 'Панель удалена' });
           loadPanels();
         } catch (error: unknown) {
-          const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Ошибка удаления панели';
+          const message =
+            (error as { response?: { data?: { message?: string } } })?.response?.data
+              ?.message || 'Ошибка удаления панели';
           Logger.error(`Delete panel error: ${message}`, 'Settings');
           setMsg({ open: true, type: 'error', text: message });
         }
@@ -465,7 +643,9 @@ export default function SettingsPage() {
 
   return (
     <Box>
-      <Typography variant={isMobile ? 'h5' : 'h4'} gutterBottom>Настройки утилиты</Typography>
+      <Typography variant={isMobile ? 'h5' : 'h4'} gutterBottom>
+        Настройки утилиты
+      </Typography>
 
       <Grid container spacing={3}>
         <Grid size={{ xs: 12 }}>
@@ -474,10 +654,23 @@ export default function SettingsPage() {
               <Typography variant="subtitle2" color="textSecondary" gutterBottom>
                 Статус сервиса
               </Typography>
-              {isPaused ?
-                <Chip icon={<PauseCircleFilled />} label="Остановлен" color="warning" size="small" variant="outlined" /> :
-                <Chip icon={<CheckCircle />} label="Активен" color="success" size="small" variant="outlined" />
-              }
+              {isPaused ? (
+                <Chip
+                  icon={<PauseCircleFilled />}
+                  label="Остановлен"
+                  color="warning"
+                  size="small"
+                  variant="outlined"
+                />
+              ) : (
+                <Chip
+                  icon={<CheckCircle />}
+                  label="Активен"
+                  color="success"
+                  size="small"
+                  variant="outlined"
+                />
+              )}
 
               <Tooltip title={isPaused ? 'Возобновить ротацию' : 'Поставить на паузу'}>
                 <IconButton
@@ -490,7 +683,11 @@ export default function SettingsPage() {
                     ml: 1,
                   }}
                 >
-                  {isPaused ? <PlayCircleFilled fontSize="large" /> : <PauseCircleFilled fontSize="large" />}
+                  {isPaused ? (
+                    <PlayCircleFilled fontSize="large" />
+                  ) : (
+                    <PauseCircleFilled fontSize="large" />
+                  )}
                 </IconButton>
               </Tooltip>
             </Grid>
@@ -523,16 +720,27 @@ export default function SettingsPage() {
 
         <Grid size={{ xs: 12, md: 6 }}>
           <Paper sx={{ p: 3, height: '100%' }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+            <Stack
+              direction="row"
+              justifyContent="space-between"
+              alignItems="center"
+              sx={{ mb: 2 }}
+            >
               <Typography variant="h6">Панели 3x-ui</Typography>
-              <Button variant="contained" size="small" startIcon={<Add />} onClick={openCreatePanel}>
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={<Add />}
+                onClick={openCreatePanel}
+              >
                 Добавить
               </Button>
             </Stack>
             <Divider sx={{ mb: 2 }} />
 
             <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-              Можно добавить несколько панелей с разных серверов. Первая панель используется как основная для раздела перенаправления.
+              Каждая панель участвует в генерации отдельно. Relay-правила для
+              tunnel-серверов строятся автоматически по всем активным панелям.
             </Typography>
 
             {panels.length === 0 ? (
@@ -560,7 +768,12 @@ export default function SettingsPage() {
                         spacing={2}
                       >
                         <Box>
-                          <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5, flexWrap: 'wrap' }}>
+                          <Stack
+                            direction="row"
+                            alignItems="center"
+                            spacing={1}
+                            sx={{ mb: 0.5, flexWrap: 'wrap' }}
+                          >
                             <Typography variant="body1" sx={{ fontWeight: 600 }}>
                               {panel.name}
                             </Typography>
@@ -571,6 +784,14 @@ export default function SettingsPage() {
                                 label={`${panel.geoFlag || ''} ${panel.geoCountry || ''}`.trim()}
                               />
                             )}
+                            {panel.hysteriaEnabled && (
+                              <Chip
+                                size="small"
+                                color="info"
+                                variant="outlined"
+                                label={`Hysteria2 ${panel.hysteriaHost || panel.host}:${panel.hysteriaPort || ''}`}
+                              />
+                            )}
                           </Stack>
                           <Typography variant="body2" color="textSecondary">
                             {panel.url}
@@ -578,6 +799,11 @@ export default function SettingsPage() {
                           <Typography variant="caption" color="textSecondary">
                             {[panel.host, panel.ip].filter(Boolean).join(' • ')}
                           </Typography>
+                          {panel.hysteriaEnabled && panel.hysteriaSni && (
+                            <Typography variant="caption" display="block" color="textSecondary">
+                              Hysteria2 SNI: {panel.hysteriaSni}
+                            </Typography>
+                          )}
                         </Box>
 
                         <Stack direction={isMobile ? 'column' : 'row'} spacing={1}>
@@ -603,7 +829,9 @@ export default function SettingsPage() {
         <Grid size={{ xs: 12, md: 6 }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>Генерация инбаундов</Typography>
+              <Typography variant="h6" gutterBottom>
+                Генерация инбаундов
+              </Typography>
               <Divider sx={{ mb: 2 }} />
 
               <TextField
@@ -614,7 +842,9 @@ export default function SettingsPage() {
                 value={settings.rotation_interval}
                 onChange={handleSettingChange('rotation_interval')}
                 slotProps={{
-                  input: { endAdornment: <InputAdornment position="end">мин</InputAdornment> },
+                  input: {
+                    endAdornment: <InputAdornment position="end">мин</InputAdornment>,
+                  },
                 }}
                 helperText="Как часто менять инбаунды (минимум 10 мин)"
               />
@@ -624,8 +854,16 @@ export default function SettingsPage() {
                     key={preset.value}
                     label={preset.label}
                     onClick={() => handlePresetClick(preset.value)}
-                    color={settings.rotation_interval === preset.value.toString() ? 'primary' : 'default'}
-                    variant={settings.rotation_interval === preset.value.toString() ? 'filled' : 'outlined'}
+                    color={
+                      settings.rotation_interval === preset.value.toString()
+                        ? 'primary'
+                        : 'default'
+                    }
+                    variant={
+                      settings.rotation_interval === preset.value.toString()
+                        ? 'filled'
+                        : 'outlined'
+                    }
                     clickable
                   />
                 ))}
@@ -657,7 +895,14 @@ export default function SettingsPage() {
                   Нет активных подписок
                 </Typography>
               ) : (
-                <List sx={{ maxHeight: 400, overflow: 'auto', bgcolor: 'background.default', borderRadius: 1 }}>
+                <List
+                  sx={{
+                    maxHeight: 400,
+                    overflow: 'auto',
+                    bgcolor: 'background.default',
+                    borderRadius: 1,
+                  }}
+                >
                   {subs.map((sub) => (
                     <ListItem
                       key={sub.id}
@@ -672,13 +917,17 @@ export default function SettingsPage() {
                         control={
                           <Checkbox
                             checked={sub.isAutoRotationEnabled ?? true}
-                            onChange={(e) => handleToggleAutoRotation(sub.id, e.target.checked)}
+                            onChange={(e) =>
+                              handleToggleAutoRotation(sub.id, e.target.checked)
+                            }
                             color="primary"
                           />
                         }
                         label={
                           <Box>
-                            <Typography variant="body2" sx={{ fontWeight: 500 }}>{sub.name}</Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                              {sub.name}
+                            </Typography>
                             <Typography variant="caption" color="textSecondary">
                               {sub.uuid.substring(0, 8)}...
                             </Typography>
@@ -687,7 +936,11 @@ export default function SettingsPage() {
                         sx={{ flexGrow: 1 }}
                       />
                       <Tooltip title="Обновить подписку вручную">
-                        <IconButton size="small" onClick={() => handleManualRotate(sub)} color="primary">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleManualRotate(sub)}
+                          color="primary"
+                        >
                           <Refresh />
                         </IconButton>
                       </Tooltip>
@@ -698,10 +951,18 @@ export default function SettingsPage() {
 
               {subs.length > 0 && (
                 <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                  <Button variant="outlined" size="small" onClick={() => handleBulkUpdate(true)}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => handleBulkUpdate(true)}
+                  >
                     Включить для всех
                   </Button>
-                  <Button variant="outlined" size="small" onClick={() => handleBulkUpdate(false)}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => handleBulkUpdate(false)}
+                  >
                     Выключить для всех
                   </Button>
                 </Box>
@@ -709,7 +970,9 @@ export default function SettingsPage() {
             </Paper>
 
             <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>Доступ к 3DP-MANAGER</Typography>
+              <Typography variant="h6" gutterBottom>
+                Доступ к 3DP-MANAGER
+              </Typography>
               <Divider sx={{ mb: 2 }} />
 
               <TextField
@@ -738,12 +1001,17 @@ export default function SettingsPage() {
 
       <Dialog
         open={panelDialog.open}
-        onClose={() => setPanelDialog({ open: false, editingId: null })}
+        onClose={() => {
+          setPanelDialog({ open: false, editingId: null });
+          resetPanelForm();
+        }}
         fullWidth
         maxWidth="sm"
       >
         <DialogTitle>
-          {panelDialog.editingId ? 'Редактировать панель 3x-ui' : 'Новая панель 3x-ui'}
+          {panelDialog.editingId
+            ? 'Редактировать панель 3x-ui'
+            : 'Новая панель 3x-ui'}
         </DialogTitle>
         <DialogContent>
           <TextField
@@ -776,9 +1044,72 @@ export default function SettingsPage() {
             value={panelForm.password}
             onChange={handlePanelChange('password')}
           />
+
+          <Divider sx={{ my: 2 }} />
+
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={panelForm.hysteriaEnabled}
+                onChange={handlePanelChange('hysteriaEnabled')}
+              />
+            }
+            label="Использовать Hysteria2 на этом сервере"
+          />
+
+          {panelForm.hysteriaEnabled && (
+            <Box sx={{ mt: 1 }}>
+              <TextField
+                fullWidth
+                margin="dense"
+                label="Hysteria2 host"
+                value={panelForm.hysteriaHost}
+                onChange={handlePanelChange('hysteriaHost')}
+                helperText="Хост, который будет попадать в hy2-ссылку"
+              />
+              <TextField
+                fullWidth
+                margin="dense"
+                label="Hysteria2 port"
+                value={panelForm.hysteriaPort}
+                onChange={handlePanelChange('hysteriaPort')}
+              />
+              <TextField
+                fullWidth
+                margin="dense"
+                label="Hysteria2 password"
+                type="password"
+                value={panelForm.hysteriaPassword}
+                onChange={handlePanelChange('hysteriaPassword')}
+              />
+              <TextField
+                fullWidth
+                margin="dense"
+                label="Hysteria2 obfs password"
+                type="password"
+                value={panelForm.hysteriaObfsPassword}
+                onChange={handlePanelChange('hysteriaObfsPassword')}
+              />
+              <TextField
+                fullWidth
+                margin="dense"
+                label="Hysteria2 SNI"
+                value={panelForm.hysteriaSni}
+                onChange={handlePanelChange('hysteriaSni')}
+                helperText="Необязательно. Если пусто, будет использован SNI из инбаунда или host"
+              />
+            </Box>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setPanelDialog({ open: false, editingId: null })}>Отмена</Button>
+          <Button
+            onClick={() => {
+              setPanelDialog({ open: false, editingId: null });
+              resetPanelForm();
+            }}
+          >
+            Отмена
+          </Button>
           <Button onClick={() => handleCheckPanelConnection()} disabled={panelLoading}>
             Проверить
           </Button>
@@ -788,11 +1119,18 @@ export default function SettingsPage() {
         </DialogActions>
       </Dialog>
 
-      <Snackbar open={msg.open} autoHideDuration={5000} onClose={() => setMsg({ ...msg, open: false })}>
+      <Snackbar
+        open={msg.open}
+        autoHideDuration={5000}
+        onClose={() => setMsg({ ...msg, open: false })}
+      >
         <Alert severity={msg.type}>{msg.text}</Alert>
       </Snackbar>
 
-      <Dialog open={confirmDialog.open} onClose={() => setConfirmDialog({ ...confirmDialog, open: false })}>
+      <Dialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog({ ...confirmDialog, open: false })}
+      >
         <DialogTitle>Подтверждение действия</DialogTitle>
         <DialogContent>
           <Typography>{confirmDialog.title}</Typography>
