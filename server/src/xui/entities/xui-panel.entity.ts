@@ -38,6 +38,24 @@ export class XuiPanel {
   @Column({ default: true })
   isEnabled: boolean;
 
+  @Column({ default: false })
+  hysteriaEnabled: boolean;
+
+  @Column({ nullable: true })
+  hysteriaHost: string | null;
+
+  @Column({ nullable: true })
+  hysteriaPort: number | null;
+
+  @Column({ nullable: true })
+  hysteriaPassword: string | null;
+
+  @Column({ nullable: true })
+  hysteriaObfsPassword: string | null;
+
+  @Column({ nullable: true })
+  hysteriaSni: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 
