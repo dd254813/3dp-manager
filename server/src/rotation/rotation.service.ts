@@ -12,6 +12,7 @@ import { XuiPanel } from '../xui/entities/xui-panel.entity';
 import { XuiService } from '../xui/xui.service';
 import { InboundBuilderService } from '../inbounds/inbound-builder.service';
 import { XuiInboundRaw } from '../inbounds/xui-inbound.types';
+import { TunnelsService } from '../tunnels/tunnels.service';
 import { v4 as uuidv4 } from 'uuid';
 
 const REALITY_TYPES = new Set([
@@ -26,7 +27,14 @@ const PANEL_BOUND_TYPES = new Set([
   'vless-ws',
   'vmess-tcp',
   'shadowsocks-tcp',
+  'hysteria2-udp',
 ]);
+
+interface TunnelSyncResult {
+  syncedCount: number;
+  totalCount: number;
+  failedNames: string[];
+}
 
 @Injectable()
 export class RotationService implements OnModuleInit {
@@ -39,6 +47,7 @@ export class RotationService implements OnModuleInit {
     @InjectRepository(Setting) private settingRepo: Repository<Setting>,
     private xuiService: XuiService,
     private inboundBuilder: InboundBuilderService,
+    private tunnelsService: TunnelsService,
   ) {}
 
   async onModuleInit() {
@@ -182,10 +191,16 @@ export class RotationService implements OnModuleInit {
       await this.rotateSubscription(sub, domains, availablePanels);
     }
 
+    const tunnelSync = await this.tunnelsService.syncInstalledTunnels();
+
     this.logger.debug('Ротация завершена.');
     return {
       success: true,
-      message: this.buildPanelSummaryMessage(availablePanels, failedPanels),
+      message: this.buildResultMessage(
+        availablePanels,
+        failedPanels,
+        tunnelSync,
+      ),
     };
   }
 
@@ -217,6 +232,24 @@ export class RotationService implements OnModuleInit {
     return `Ротация выполнена частично: ${availablePanels.length}/${availablePanels.length + failedPanels.length} панелей доступны. Недоступны: ${failedNames}`;
   }
 
+  private buildResultMessage(
+    availablePanels: XuiPanel[],
+    failedPanels: XuiPanel[],
+    tunnelSync: TunnelSyncResult,
+  ) {
+    let message = this.buildPanelSummaryMessage(availablePanels, failedPanels);
+
+    if (tunnelSync.totalCount > 0) {
+      if (tunnelSync.failedNames.length === 0) {
+        message += `. Relay sync: ${tunnelSync.syncedCount}/${tunnelSync.totalCount}`;
+      } else {
+        message += `. Relay sync: ${tunnelSync.syncedCount}/${tunnelSync.totalCount}. Ошибки: ${tunnelSync.failedNames.join(', ')}`;
+      }
+    }
+
+    return message;
+  }
+
   private async rotateSubscription(
     sub: Subscription,
     domains: Domain[],
@@ -244,56 +277,32 @@ export class RotationService implements OnModuleInit {
       }
     }
 
-    await this.createSingletonInbounds(sub, domains, availablePanels[0]);
+    await this.createSingletonInbounds(sub);
 
     for (const panel of availablePanels) {
       await this.createPanelInbounds(sub, domains, panel);
     }
   }
 
-  private async createSingletonInbounds(
-    sub: Subscription,
-    domains: Domain[],
-    primaryPanel?: XuiPanel,
-  ) {
+  private async createSingletonInbounds(sub: Subscription) {
     const inboundsConfig = sub.inboundsConfig || [];
-    const serverAddress = primaryPanel?.host || 'localhost';
-    const flagEmoji = primaryPanel?.geoFlag || '%F0%9F%92%AF';
 
     for (const config of inboundsConfig) {
-      if (config.type === 'custom') {
-        const newInbound = this.inboundRepo.create({
-          xuiId: 0,
-          xuiPanelId: null,
-          port: 0,
-          protocol: 'custom',
-          remark: 'custom-link',
-          link: config.link || '',
-          subscription: sub,
-        });
-        await this.inboundRepo.save(newInbound);
+      if (config.type !== 'custom') {
         continue;
       }
 
-      if (config.type === 'hysteria2-udp') {
-        const sni =
-          config.sni === 'random' ? this.pickDomain(domains) : config.sni || this.pickDomain(domains);
-        const link = this.inboundBuilder.buildHysteria2Link(
-          serverAddress,
-          sni,
-          `${flagEmoji}%20hysteria2-udp`,
-        );
-        const newInbound = this.inboundRepo.create({
-          xuiId: 0,
-          xuiPanelId: null,
-          port: 0,
-          protocol: 'hysteria2',
-          remark: 'hysteria2-udp',
-          link,
-          subscription: sub,
-        });
-        await this.inboundRepo.save(newInbound);
-      }
+      const newInbound = this.inboundRepo.create({
+        xuiId: 0,
+        xuiPanelId: null,
+        port: 0,
+        relayPort: null,
+        protocol: 'custom',
+        remark: 'custom-link',
+        link: config.link || '',
+        subscription: sub,
+      });
+      await this.inboundRepo.save(newInbound);
     }
   }
 
@@ -323,12 +332,26 @@ export class RotationService implements OnModuleInit {
       );
     }
 
-    const usedPorts = new Set<number>();
+    const usedOriginPorts = new Set<number>();
+    const usedRelayPorts = new Set<number>();
     const serverAddress = panel.host || 'localhost';
     const flagEmoji = panel.geoFlag || '%F0%9F%92%AF';
 
     for (const config of inboundsConfig) {
       const type = config.type || '';
+
+      if (type === 'hysteria2-udp') {
+        await this.createHysteriaInbound(
+          sub,
+          domains,
+          panel,
+          config,
+          usedRelayPorts,
+          serverAddress,
+          flagEmoji,
+        );
+        continue;
+      }
 
       if (REALITY_TYPES.has(type) && !keys) {
         continue;
@@ -336,29 +359,36 @@ export class RotationService implements OnModuleInit {
 
       const uuid = uuidv4();
       const sni =
-        config.sni === 'random' ? this.pickDomain(domains) : config.sni || this.pickDomain(domains);
+        config.sni === 'random'
+          ? this.pickDomain(domains)
+          : config.sni || this.pickDomain(domains);
 
-      let port: number;
+      let requestedPort: number;
       if (config.port === 'random' || !config.port) {
-        port = await this.getFreePort(0, usedPorts, panel.id);
+        requestedPort = await this.getFreeOriginPort(0, usedOriginPorts, panel.id);
       } else {
-        port =
+        requestedPort =
           typeof config.port === 'string'
             ? parseInt(config.port, 10)
             : config.port;
 
-        if (!Number.isFinite(port) || port <= 0) {
-          port = await this.getFreePort(0, usedPorts, panel.id);
+        if (!Number.isFinite(requestedPort) || requestedPort <= 0) {
+          requestedPort = await this.getFreeOriginPort(0, usedOriginPorts, panel.id);
+        } else {
+          requestedPort = await this.getFreeOriginPort(
+            requestedPort,
+            usedOriginPorts,
+            panel.id,
+          );
         }
       }
-      usedPorts.add(port);
 
       let xuiConfig: XuiInboundRaw | null = null;
 
       switch (type) {
         case 'vless-tcp-reality':
           xuiConfig = this.inboundBuilder.buildVlessRealityTcp({
-            port,
+            port: requestedPort,
             uuid,
             sni,
             ...keys!,
@@ -366,7 +396,7 @@ export class RotationService implements OnModuleInit {
           break;
         case 'vless-xhttp-reality':
           xuiConfig = this.inboundBuilder.buildVlessRealityXhttp({
-            port,
+            port: requestedPort,
             uuid,
             sni,
             ...keys!,
@@ -374,24 +404,34 @@ export class RotationService implements OnModuleInit {
           break;
         case 'vless-grpc-reality':
           xuiConfig = this.inboundBuilder.buildVlessRealityGrpc({
-            port,
+            port: requestedPort,
             uuid,
             sni,
             ...keys!,
           });
           break;
         case 'vless-ws':
-          xuiConfig = this.inboundBuilder.buildVlessWs({ port, uuid, sni });
+          xuiConfig = this.inboundBuilder.buildVlessWs({
+            port: requestedPort,
+            uuid,
+            sni,
+          });
           break;
         case 'vmess-tcp':
-          xuiConfig = this.inboundBuilder.buildVmessTcp({ port, uuid });
+          xuiConfig = this.inboundBuilder.buildVmessTcp({
+            port: requestedPort,
+            uuid,
+          });
           break;
         case 'shadowsocks-tcp':
-          xuiConfig = this.inboundBuilder.buildShadowsocksTcp({ port, uuid });
+          xuiConfig = this.inboundBuilder.buildShadowsocksTcp({
+            port: requestedPort,
+            uuid,
+          });
           break;
         case 'trojan-tcp-reality':
           xuiConfig = this.inboundBuilder.buildTrojanRealityTcp({
-            port,
+            port: requestedPort,
             uuid,
             sni,
             ...keys!,
@@ -402,41 +442,109 @@ export class RotationService implements OnModuleInit {
           continue;
       }
 
-      const xuiId = await this.xuiService.addInbound(panel.id, xuiConfig);
+      const createdInbound = await this.xuiService.addInbound(panel.id, xuiConfig);
 
-      if (xuiId && xuiConfig) {
-        const settings = JSON.parse(xuiConfig.settings) as {
-          clients?: Array<{ id?: string; password?: string }>;
-        };
-        const idOrPass =
-          settings.clients?.[0]?.id || settings.clients?.[0]?.password || '';
-
-        const fullLink = this.inboundBuilder.buildInboundLink(
-          xuiConfig,
-          serverAddress,
-          idOrPass,
-          flagEmoji,
-        );
-
-        const newInbound = this.inboundRepo.create({
-          xuiId,
-          xuiPanelId: panel.id,
-          port,
-          protocol: xuiConfig.protocol,
-          remark: xuiConfig.remark,
-          link: fullLink,
-          subscription: sub,
-        });
-        await this.inboundRepo.save(newInbound);
+      if (!createdInbound || !xuiConfig) {
+        continue;
       }
+
+      usedOriginPorts.add(createdInbound.port);
+      const relayPort = await this.getFreeRelayPort(
+        createdInbound.port,
+        usedRelayPorts,
+      );
+      usedRelayPorts.add(relayPort);
+
+      const effectiveConfig = { ...xuiConfig, port: createdInbound.port };
+      const settings = JSON.parse(effectiveConfig.settings) as {
+        clients?: Array<{ id?: string; password?: string }>;
+      };
+      const idOrPass =
+        settings.clients?.[0]?.id || settings.clients?.[0]?.password || '';
+
+      const fullLink = this.inboundBuilder.buildInboundLink(
+        effectiveConfig,
+        serverAddress,
+        idOrPass,
+        flagEmoji,
+      );
+
+      const newInbound = this.inboundRepo.create({
+        xuiId: createdInbound.id,
+        xuiPanelId: panel.id,
+        port: createdInbound.port,
+        relayPort,
+        protocol: effectiveConfig.protocol,
+        remark: effectiveConfig.remark,
+        link: fullLink,
+        subscription: sub,
+      });
+      await this.inboundRepo.save(newInbound);
     }
+  }
+
+  private async createHysteriaInbound(
+    sub: Subscription,
+    domains: Domain[],
+    panel: XuiPanel,
+    config: { sni?: string; port?: number | string },
+    usedRelayPorts: Set<number>,
+    fallbackHost: string,
+    flagEmoji: string,
+  ) {
+    if (
+      !panel.hysteriaEnabled ||
+      !panel.hysteriaHost ||
+      !panel.hysteriaPort ||
+      !panel.hysteriaPassword ||
+      !panel.hysteriaObfsPassword
+    ) {
+      this.logger.warn(
+        `Hysteria2 для панели ${panel.name} не настроена, hysteria2-udp будет пропущен`,
+      );
+      return;
+    }
+
+    const relayPort = await this.getFreeRelayPort(
+      panel.hysteriaPort,
+      usedRelayPorts,
+    );
+    usedRelayPorts.add(relayPort);
+
+    const hysteriaSni =
+      config.sni === 'random'
+        ? this.pickDomain(domains)
+        : config.sni || panel.hysteriaSni || panel.hysteriaHost;
+
+    const link = this.inboundBuilder.buildHysteria2Link(
+      panel.hysteriaHost || fallbackHost,
+      hysteriaSni,
+      `${flagEmoji}%20hysteria2-udp`,
+      {
+        port: panel.hysteriaPort,
+        password: panel.hysteriaPassword,
+        obfsPassword: panel.hysteriaObfsPassword,
+      },
+    );
+
+    const newInbound = this.inboundRepo.create({
+      xuiId: 0,
+      xuiPanelId: panel.id,
+      port: panel.hysteriaPort,
+      relayPort,
+      protocol: 'hysteria2',
+      remark: 'hysteria2-udp',
+      link,
+      subscription: sub,
+    });
+    await this.inboundRepo.save(newInbound);
   }
 
   private pickDomain(list: Domain[]): string {
     return list[Math.floor(Math.random() * list.length)].name;
   }
 
-  private async getFreePort(
+  private async getFreeOriginPort(
     preferred: number,
     currentBatch: Set<number>,
     panelId: number,
@@ -451,13 +559,41 @@ export class RotationService implements OnModuleInit {
     }
 
     while (true) {
-      const port = Math.floor(Math.random() * (60000 - 10000)) + 10000;
+      const port = Math.floor(Math.random() * (60000 - 10000 + 1)) + 10000;
       if (currentBatch.has(port)) {
         continue;
       }
 
       const existing = await this.inboundRepo.findOne({
         where: { port, xuiPanelId: panelId },
+      });
+      if (!existing) {
+        return port;
+      }
+    }
+  }
+
+  private async getFreeRelayPort(
+    preferred: number,
+    currentBatch: Set<number>,
+  ): Promise<number> {
+    if (preferred > 0 && !currentBatch.has(preferred)) {
+      const existing = await this.inboundRepo.findOne({
+        where: { relayPort: preferred },
+      });
+      if (!existing) {
+        return preferred;
+      }
+    }
+
+    while (true) {
+      const port = Math.floor(Math.random() * (60000 - 10000 + 1)) + 10000;
+      if (currentBatch.has(port)) {
+        continue;
+      }
+
+      const existing = await this.inboundRepo.findOne({
+        where: { relayPort: port },
       });
       if (!existing) {
         return port;
@@ -505,11 +641,16 @@ export class RotationService implements OnModuleInit {
     }
 
     await this.rotateSubscription(sub, domains, availablePanels);
+    const tunnelSync = await this.tunnelsService.syncInstalledTunnels();
 
     this.logger.debug(`Ручная ротация подписки ${subscriptionId} завершена.`);
     return {
       success: true,
-      message: this.buildPanelSummaryMessage(availablePanels, failedPanels),
+      message: this.buildResultMessage(
+        availablePanels,
+        failedPanels,
+        tunnelSync,
+      ),
     };
   }
 }
