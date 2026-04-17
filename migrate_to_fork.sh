@@ -12,6 +12,7 @@ BACKUP_ROOT="/opt/3dp-manager-backups"
 TARGET_REPO="${TARGET_REPO:-dd254813/3dp-manager}"
 TARGET_REF="${TARGET_REF:-main}"
 SOURCE_CHANNEL_FILE="${PROJECT_DIR}/.3dp-source-channel"
+MIN_BUILD_FREE_GB="${MIN_BUILD_FREE_GB:-5}"
 COMPOSE_CMD=()
 DOWNLOADED_SOURCE_DIR=""
 DOWNLOADED_SOURCE_ROOT=""
@@ -46,6 +47,51 @@ ensure_common_tools() {
   if [[ ${#packages[@]} -gt 0 ]]; then
     apt-get update
     apt-get install -y "${packages[@]}"
+  fi
+}
+
+cleanup_docker_build_cache() {
+  log "Очищаю dangling build cache Docker перед сборкой"
+  docker builder prune -f >/dev/null 2>&1 || true
+  docker image prune -f >/dev/null 2>&1 || true
+}
+
+storage_paths() {
+  local docker_root
+  docker_root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)
+  [[ -n "$docker_root" ]] && echo "$docker_root"
+  [[ -d "/var/lib/containerd" ]] && echo "/var/lib/containerd"
+  echo "$PROJECT_DIR"
+}
+
+available_kb_for_path() {
+  local path="$1"
+  df -Pk "$path" 2>/dev/null | awk 'NR==2 { print $4 }'
+}
+
+ensure_build_headroom() {
+  local required_gb="${1:-5}"
+  local required_kb=$((required_gb * 1024 * 1024))
+  local free_kb=""
+  local path
+  local current_free
+
+  for path in $(storage_paths | awk '!seen[$0]++'); do
+    current_free=$(available_kb_for_path "$path")
+    [[ -n "$current_free" ]] || continue
+    if [[ -z "$free_kb" || "$current_free" -lt "$free_kb" ]]; then
+      free_kb="$current_free"
+    fi
+  done
+
+  [[ -n "$free_kb" ]] || die "Не удалось определить свободное место на файловой системе"
+
+  local free_gb=$((free_kb / 1024 / 1024))
+  log "Свободно перед сборкой: ~${free_gb} GB"
+
+  if (( free_kb < required_kb )); then
+    docker system df || true
+    die "Недостаточно свободного места для сборки. Нужно хотя бы ${required_gb} GB. Освободите место и повторите запуск."
   fi
 }
 
@@ -386,6 +432,8 @@ ensure_bus_location "${PROJECT_DIR}/client/nginx-client.conf"
 write_source_channel
 
 cd "$PROJECT_DIR"
+cleanup_docker_build_cache
+ensure_build_headroom "$MIN_BUILD_FREE_GB"
 log "Пересобираю backend/frontend уже из исходников форка"
 "${COMPOSE_CMD[@]}" pull postgres || true
 "${COMPOSE_CMD[@]}" build --pull backend frontend
