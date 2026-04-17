@@ -26,6 +26,7 @@ export class SubscriptionsService {
     const sub = this.subRepo.create({
       name: dto.name,
       uuid: uuidv4(),
+      xuiPanelIds: this.normalizePanelIds(dto.xuiPanelIds),
       inboundsConfig: dto.inboundsConfig || [],
       isAutoRotationEnabled: dto.isAutoRotationEnabled ?? true,
     });
@@ -45,6 +46,10 @@ export class SubscriptionsService {
 
     if (dto.name && dto.name.trim().length > 0) {
       sub.name = dto.name;
+    }
+
+    if (dto.xuiPanelIds !== undefined) {
+      sub.xuiPanelIds = this.normalizePanelIds(dto.xuiPanelIds);
     }
 
     if (dto.inboundsConfig) {
@@ -74,5 +79,15 @@ export class SubscriptionsService {
     }
 
     return this.subRepo.remove(sub);
+  }
+
+  private normalizePanelIds(panelIds?: number[] | null) {
+    if (!Array.isArray(panelIds)) {
+      return null;
+    }
+
+    return [...new Set(panelIds)]
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0);
   }
 }
