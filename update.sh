@@ -38,6 +38,31 @@ resolve_compose_cmd() {
   die "Не найден Docker Compose (ни v2 plugin, ни v1 binary)"
 }
 
+is_compose_v1() {
+  [[ "${COMPOSE_CMD[0]}" == "docker-compose" ]]
+}
+
+remove_stale_service_containers() {
+  is_compose_v1 || return 0
+
+  local ids=()
+  local id
+  while read -r id; do
+    [[ -n "$id" ]] && ids+=("$id")
+  done < <(
+    {
+      docker ps -aq --filter "name=3dp-postgres"
+      docker ps -aq --filter "name=3dp-backend"
+      docker ps -aq --filter "name=3dp-frontend"
+    } | awk '!seen[$0]++'
+  )
+
+  if [[ ${#ids[@]} -gt 0 ]]; then
+    log "Удаляю stale контейнеры перед up для docker-compose v1"
+    docker rm -f "${ids[@]}" >/dev/null 2>&1 || true
+  fi
+}
+
 ensure_common_tools() {
   local packages=()
 
@@ -519,6 +544,7 @@ run_source_update() {
   ensure_build_headroom "$MIN_BUILD_FREE_GB"
   "${COMPOSE_CMD[@]}" pull postgres || true
   build_services_sequentially
+  remove_stale_service_containers
   "${COMPOSE_CMD[@]}" up -d --remove-orphans
 
   if ! check_containers_running 120; then
@@ -545,6 +571,7 @@ run_image_update() {
   docker pull "$(image_backend_ref)"
   docker pull "$(image_frontend_ref)"
   "${COMPOSE_CMD[@]}" pull postgres || true
+  remove_stale_service_containers
   "${COMPOSE_CMD[@]}" up -d --remove-orphans
 
   if ! check_containers_running 120; then
@@ -564,6 +591,7 @@ run_legacy_update() {
 
   cd "$PROJECT_DIR"
   "${COMPOSE_CMD[@]}" pull
+  remove_stale_service_containers
   "${COMPOSE_CMD[@]}" up -d
   "${COMPOSE_CMD[@]}" restart frontend || true
 
