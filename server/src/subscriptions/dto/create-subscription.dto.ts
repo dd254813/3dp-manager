@@ -6,6 +6,8 @@ import {
   IsBoolean,
   ArrayMinSize,
   ArrayMaxSize,
+  ArrayUnique,
+  IsInt,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -36,6 +38,14 @@ export class CreateSubscriptionDto {
   @ArrayMaxSize(20)
   @IsOptional()
   inboundsConfig?: InboundConfigDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ArrayUnique()
+  @Type(() => Number)
+  @IsInt({ each: true })
+  xuiPanelIds?: number[] | null;
 
   @IsBoolean()
   @IsOptional()
