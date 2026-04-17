@@ -305,16 +305,16 @@ download_source_archive() {
   [[ -n "$DOWNLOADED_SOURCE_DIR" ]] || die "Не удалось распаковать исходники ${repo}@${ref}"
 }
 
-channel_repo_owner() {
-  echo "${TARGET_REPO%%/*}"
+channel_repo_slug() {
+  echo "${TARGET_REPO}"
 }
 
 image_backend_ref() {
-  echo "ghcr.io/$(channel_repo_owner)/3dp-manager-backend:${TARGET_IMAGE_TAG}"
+  echo "ghcr.io/$(channel_repo_slug)-server:${TARGET_IMAGE_TAG}"
 }
 
 image_frontend_ref() {
-  echo "ghcr.io/$(channel_repo_owner)/3dp-manager-frontend:${TARGET_IMAGE_TAG}"
+  echo "ghcr.io/$(channel_repo_slug)-client:${TARGET_IMAGE_TAG}"
 }
 
 ensure_local_nginx_client_conf() {
