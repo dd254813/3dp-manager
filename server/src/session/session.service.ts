@@ -1,48 +1,38 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-/**
- * Сервис для управления сессионными cookie
- * Хранит и предоставляет cookie для HTTP-запросов к внешним API
- */
 @Injectable()
 export class SessionService {
   private readonly logger = new Logger(SessionService.name);
-  private cookie: string | null = null;
+  private cookies = new Map<number, string>();
 
-  /**
-   * Получить текущую сессионную cookie
-   */
-  getCookie(): string | null {
-    return this.cookie;
+  getCookie(panelId: number): string | null {
+    return this.cookies.get(panelId) ?? null;
   }
 
-  /**
-   * Установить сессионную cookie из заголовков ответа
-   * @param setCookieHeader Массив заголовков Set-Cookie
-   */
-  setFromHeaders(setCookieHeader: string[] | undefined): void {
+  setFromHeaders(panelId: number, setCookieHeader: string[] | undefined): void {
     if (!setCookieHeader) {
       this.logger.warn('Set-Cookie заголовок отсутствует');
       return;
     }
 
-    this.cookie = setCookieHeader.map((c) => c.split(';')[0]).join('; ');
-
-    this.logger.debug('Сессионная cookie обновлена');
+    const cookie = setCookieHeader.map((c) => c.split(';')[0]).join('; ');
+    this.cookies.set(panelId, cookie);
+    this.logger.debug(`Сессионная cookie обновлена для панели ${panelId}`);
   }
 
-  /**
-   * Очистить сессионную cookie
-   */
-  clear(): void {
-    this.cookie = null;
-    this.logger.debug('Сессионная cookie очищена');
+  clear(panelId?: number): void {
+    if (typeof panelId === 'number') {
+      this.cookies.delete(panelId);
+      this.logger.debug(`Сессионная cookie очищена для панели ${panelId}`);
+      return;
+    }
+
+    this.cookies.clear();
+    this.logger.debug('Все сессионные cookies очищены');
   }
 
-  /**
-   * Проверить наличие сессионной cookie
-   */
-  hasCookie(): boolean {
-    return this.cookie !== null && this.cookie.length > 0;
+  hasCookie(panelId: number): boolean {
+    const cookie = this.cookies.get(panelId);
+    return cookie !== undefined && cookie.length > 0;
   }
 }
