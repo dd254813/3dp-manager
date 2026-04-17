@@ -556,9 +556,12 @@ export class RotationService implements OnModuleInit {
     usedRelayPorts.add(relayPort);
 
     const hysteriaSni =
-      config.sni === 'random'
-        ? this.pickDomain(domains)
-        : config.sni || panel.hysteriaSni || panel.hysteriaHost;
+      config.sni && config.sni !== 'random'
+        ? config.sni
+        : panel.hysteriaSni ||
+          panel.hysteriaHost ||
+          fallbackHost ||
+          this.pickDomain(domains);
 
     const link = this.inboundBuilder.buildHysteria2Link(
       panel.hysteriaHost || fallbackHost,
