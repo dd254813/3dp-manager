@@ -10,9 +10,15 @@ die() { echo -e "\033[1;31m[ERROR]\033[0m $1"; exit 1; }
 PROJECT_DIR="/opt/3dp-manager"
 SOURCE_CHANNEL_FILE="${PROJECT_DIR}/.3dp-source-channel"
 MIN_BUILD_FREE_GB="${MIN_BUILD_FREE_GB:-5}"
+SERVICES_TO_BUILD="${SERVICES_TO_BUILD:-backend frontend}"
+UPDATE_MODE="${UPDATE_MODE:-}"
 COMPOSE_CMD=()
 DOWNLOADED_SOURCE_DIR=""
 DOWNLOADED_SOURCE_ROOT=""
+SOURCE_CHANNEL_MODE="build"
+SOURCE_CHANNEL_REPO=""
+SOURCE_CHANNEL_REF="main"
+SOURCE_CHANNEL_IMAGE_TAG=""
 
 need_root() {
   [[ $EUID -eq 0 ]] || die "Запускать только от root"
@@ -278,7 +284,30 @@ load_source_channel() {
   source "$SOURCE_CHANNEL_FILE"
   [[ -n "${SOURCE_CHANNEL_REPO:-}" ]] || return 1
   SOURCE_CHANNEL_REF="${SOURCE_CHANNEL_REF:-main}"
+  SOURCE_CHANNEL_MODE="${SOURCE_CHANNEL_MODE:-build}"
+  SOURCE_CHANNEL_IMAGE_TAG="${SOURCE_CHANNEL_IMAGE_TAG:-${SOURCE_CHANNEL_REF}}"
   return 0
+}
+
+write_source_channel() {
+  cat > "$SOURCE_CHANNEL_FILE" <<EOF
+SOURCE_CHANNEL_REPO=${SOURCE_CHANNEL_REPO}
+SOURCE_CHANNEL_REF=${SOURCE_CHANNEL_REF}
+SOURCE_CHANNEL_MODE=${SOURCE_CHANNEL_MODE}
+SOURCE_CHANNEL_IMAGE_TAG=${SOURCE_CHANNEL_IMAGE_TAG}
+EOF
+}
+
+channel_repo_owner() {
+  echo "${SOURCE_CHANNEL_REPO%%/*}"
+}
+
+image_backend_ref() {
+  echo "ghcr.io/$(channel_repo_owner)/3dp-manager-backend:${SOURCE_CHANNEL_IMAGE_TAG}"
+}
+
+image_frontend_ref() {
+  echo "ghcr.io/$(channel_repo_owner)/3dp-manager-frontend:${SOURCE_CHANNEL_IMAGE_TAG}"
 }
 
 ensure_local_nginx_client_conf() {
@@ -352,6 +381,60 @@ convert_compose_to_source_build() {
   mv "$tmp_file" "$compose_file"
 }
 
+convert_compose_to_fork_images() {
+  local compose_file="$1"
+  local tmp_file
+  local backend_image
+  local frontend_image
+  backend_image="$(image_backend_ref)"
+  frontend_image="$(image_frontend_ref)"
+  tmp_file="$(mktemp)"
+
+  awk -v backend_image="$backend_image" -v frontend_image="$frontend_image" '
+    function insert_image(service_name) {
+      if (inserted == 0) {
+        if (service_name == "backend") {
+          print "    image: " backend_image
+        }
+        if (service_name == "frontend") {
+          print "    image: " frontend_image
+        }
+        inserted = 1
+      }
+    }
+    {
+      if ($0 ~ /^  backend:[[:space:]]*$/) {
+        section = "backend"
+        inserted = 0
+        print
+        next
+      }
+      if ($0 ~ /^  frontend:[[:space:]]*$/) {
+        section = "frontend"
+        inserted = 0
+        print
+        next
+      }
+      if ($0 ~ /^  [A-Za-z0-9_-]+:[[:space:]]*$/ && $0 !~ /^  (backend|frontend):[[:space:]]*$/) {
+        section = ""
+        inserted = 0
+      }
+      if (section == "backend" || section == "frontend") {
+        if ($0 ~ /^    image:[[:space:]]*/ || $0 ~ /^    build:[[:space:]]*/) {
+          insert_image(section)
+          next
+        }
+        if (inserted == 0 && $0 ~ /^    [^[:space:]]/) {
+          insert_image(section)
+        }
+      }
+      print
+    }
+  ' "$compose_file" > "$tmp_file"
+
+  mv "$tmp_file" "$compose_file"
+}
+
 download_source_archive() {
   local repo="$1"
   local ref="$2"
@@ -398,8 +481,17 @@ finalize_self_update() {
   fi
 }
 
-run_source_update() {
-  log "Обнаружен source-канал: ${SOURCE_CHANNEL_REPO}@${SOURCE_CHANNEL_REF}"
+build_services_sequentially() {
+  local service
+  for service in $SERVICES_TO_BUILD; do
+    log "Собираю сервис: ${service}"
+    "${COMPOSE_CMD[@]}" build --pull "$service"
+    docker builder prune -f >/dev/null 2>&1 || true
+    docker image prune -f >/dev/null 2>&1 || true
+  done
+}
+
+prepare_fork_tree() {
   ensure_common_tools
 
   local backup_dir="${PROJECT_DIR}/backups/update-$(date +%Y%m%d-%H%M%S)"
@@ -409,15 +501,24 @@ run_source_update() {
   download_source_archive "$SOURCE_CHANNEL_REPO" "$SOURCE_CHANNEL_REF"
   sync_source_tree
   ensure_local_nginx_client_conf
-  convert_compose_to_source_build "${PROJECT_DIR}/docker-compose.yml"
   ensure_nginx_api_timeouts "${PROJECT_DIR}/client/nginx-client.conf"
   ensure_bus_location "${PROJECT_DIR}/client/nginx-client.conf"
+}
+
+run_source_update() {
+  log "Обнаружен source-канал: ${SOURCE_CHANNEL_REPO}@${SOURCE_CHANNEL_REF}"
+  SOURCE_CHANNEL_MODE="build"
+  SOURCE_CHANNEL_IMAGE_TAG="${SOURCE_CHANNEL_IMAGE_TAG:-${SOURCE_CHANNEL_REF}}"
+
+  prepare_fork_tree
+  convert_compose_to_source_build "${PROJECT_DIR}/docker-compose.yml"
+  write_source_channel
 
   cd "$PROJECT_DIR"
   cleanup_docker_build_cache
   ensure_build_headroom "$MIN_BUILD_FREE_GB"
   "${COMPOSE_CMD[@]}" pull postgres || true
-  "${COMPOSE_CMD[@]}" build --pull backend frontend
+  build_services_sequentially
   "${COMPOSE_CMD[@]}" up -d --remove-orphans
 
   if ! check_containers_running 120; then
@@ -428,6 +529,32 @@ run_source_update() {
   docker image prune -f >/dev/null 2>&1 || true
   finalize_self_update
   log "Source update завершён успешно"
+}
+
+run_image_update() {
+  SOURCE_CHANNEL_MODE="images"
+  SOURCE_CHANNEL_IMAGE_TAG="${SOURCE_CHANNEL_IMAGE_TAG:-${SOURCE_CHANNEL_REF}}"
+  log "Обновление из образов форка: $(image_backend_ref) и $(image_frontend_ref)"
+
+  prepare_fork_tree
+  convert_compose_to_fork_images "${PROJECT_DIR}/docker-compose.yml"
+  write_source_channel
+
+  cd "$PROJECT_DIR"
+  docker image prune -f >/dev/null 2>&1 || true
+  docker pull "$(image_backend_ref)"
+  docker pull "$(image_frontend_ref)"
+  "${COMPOSE_CMD[@]}" pull postgres || true
+  "${COMPOSE_CMD[@]}" up -d --remove-orphans
+
+  if ! check_containers_running 120; then
+    "${COMPOSE_CMD[@]}" logs --tail=100
+    die "Не удалось запустить контейнеры после image update"
+  fi
+
+  docker image prune -f >/dev/null 2>&1 || true
+  finalize_self_update
+  log "Image update завершён успешно"
 }
 
 run_legacy_update() {
@@ -456,7 +583,15 @@ resolve_compose_cmd
 log "Compose команда: ${COMPOSE_CMD[*]}"
 
 if load_source_channel; then
-  run_source_update
+  if [[ -n "$UPDATE_MODE" ]]; then
+    SOURCE_CHANNEL_MODE="$UPDATE_MODE"
+  fi
+
+  if [[ "$SOURCE_CHANNEL_MODE" == "images" ]]; then
+    run_image_update
+  else
+    run_source_update
+  fi
 else
   run_legacy_update
 fi
