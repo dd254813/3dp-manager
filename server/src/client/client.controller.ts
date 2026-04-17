@@ -103,6 +103,8 @@ export class ClientController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
+    void format;
+
     const tunnel = await this.tunnelRepo.findOne({ where: { id: +tunnelId } });
     if (!tunnel) {
       return res.status(HttpStatus.NOT_FOUND).send('Relay server not found');
@@ -126,7 +128,7 @@ export class ClientController {
           if (i.protocol === 'custom') {
             return i.link;
           }
-          return this.patchLink(i.link, relayHost);
+          return this.patchLink(i.link, relayHost, i.relayPort || undefined);
         }) || [];
 
     const plainTextList = links.join('\n');
@@ -168,14 +170,17 @@ export class ClientController {
     }
   }
 
-  private patchLink(link: string, newHost: string): string {
+  private patchLink(link: string, newHost: string, newPort?: number): string {
     if (link.startsWith('vmess://')) {
       try {
         const base64Part = link.substring(8);
         const jsonStr = Buffer.from(base64Part, 'base64').toString('utf-8');
-        const config = JSON.parse(jsonStr) as { add: string };
+        const config = JSON.parse(jsonStr) as { add: string; port?: string | number };
 
         config.add = newHost;
+        if (newPort) {
+          config.port = newPort.toString();
+        }
 
         const newJsonStr = JSON.stringify(config);
         const newBase64 = Buffer.from(newJsonStr).toString('base64');
@@ -183,19 +188,28 @@ export class ClientController {
       } catch {
         return link;
       }
-    } else if (
+    }
+
+    if (
       link.startsWith('vless://') ||
       link.startsWith('trojan://') ||
       link.startsWith('hy2://')
     ) {
-      return link.replace(/@.*?:/, `@${newHost}:`);
-    } else if (link.startsWith('ss://')) {
-      if (link.includes('@')) {
-        return link.replace(/@.*?:/, `@${newHost}:`);
-      }
-      return link;
+      return this.patchAuthorityLink(link, newHost, newPort);
+    }
+
+    if (link.startsWith('ss://') && link.includes('@')) {
+      return this.patchAuthorityLink(link, newHost, newPort);
     }
 
     return link;
+  }
+
+  private patchAuthorityLink(link: string, newHost: string, newPort?: number) {
+    if (newPort) {
+      return link.replace(/@[^/?#]+:\d+/, `@${newHost}:${newPort}`);
+    }
+
+    return link.replace(/@.*?:/, `@${newHost}:`);
   }
 }
