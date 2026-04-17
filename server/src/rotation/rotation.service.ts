@@ -150,23 +150,6 @@ export class RotationService implements OnModuleInit {
   async performRotation() {
     this.logger.debug('Запуск плановой ротации...');
 
-    const { availablePanels, failedPanels } = await this.getAvailablePanels();
-    const totalPanels = availablePanels.length + failedPanels.length;
-
-    if (totalPanels === 0) {
-      return {
-        success: false,
-        message: 'Не добавлено ни одной панели 3x-ui',
-      };
-    }
-
-    if (availablePanels.length === 0) {
-      return {
-        success: false,
-        message: 'Не удалось войти ни в одну панель 3x-ui',
-      };
-    }
-
     const subscriptions = await this.subRepo.find({
       where: {
         isEnabled: true,
@@ -181,8 +164,28 @@ export class RotationService implements OnModuleInit {
       };
     }
 
-    const domains = await this.domainRepo.find({ where: { isEnabled: true } });
-    if (domains.length === 0) {
+    const needsPanels = subscriptions.some((sub) => this.hasPanelBoundConfigs(sub));
+    const { availablePanels, failedPanels } = await this.getAvailablePanels();
+    const totalPanels = availablePanels.length + failedPanels.length;
+
+    if (needsPanels && totalPanels === 0) {
+      return {
+        success: false,
+        message: 'Не добавлено ни одной панели 3x-ui',
+      };
+    }
+
+    if (needsPanels && availablePanels.length === 0) {
+      return {
+        success: false,
+        message: 'Не удалось войти ни в одну панель 3x-ui',
+      };
+    }
+
+    const domains = needsPanels
+      ? await this.domainRepo.find({ where: { isEnabled: true } })
+      : [];
+    if (needsPanels && domains.length === 0) {
       this.logger.warn('Список доменов пуст! Ротация невозможна.');
       return { success: false, message: 'Список доменов пуст!' };
     }
@@ -224,6 +227,10 @@ export class RotationService implements OnModuleInit {
     availablePanels: XuiPanel[],
     failedPanels: XuiPanel[],
   ) {
+    if (availablePanels.length === 0 && failedPanels.length === 0) {
+      return 'Обновление завершено';
+    }
+
     if (failedPanels.length === 0) {
       return `Ротация успешно выполнена для ${availablePanels.length} панелей`;
     }
@@ -250,6 +257,33 @@ export class RotationService implements OnModuleInit {
     return message;
   }
 
+  private hasPanelBoundConfigs(sub: Subscription) {
+    return (sub.inboundsConfig || []).some((config) =>
+      PANEL_BOUND_TYPES.has(config.type || ''),
+    );
+  }
+
+  private getSelectedPanelIds(sub: Subscription) {
+    if (!Array.isArray(sub.xuiPanelIds)) {
+      return null;
+    }
+
+    return new Set(
+      sub.xuiPanelIds
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    );
+  }
+
+  private filterPanelsForSubscription(sub: Subscription, panels: XuiPanel[]) {
+    const selectedPanelIds = this.getSelectedPanelIds(sub);
+    if (!selectedPanelIds) {
+      return panels;
+    }
+
+    return panels.filter((panel) => selectedPanelIds.has(panel.id));
+  }
+
   private async rotateSubscription(
     sub: Subscription,
     domains: Domain[],
@@ -257,15 +291,25 @@ export class RotationService implements OnModuleInit {
   ) {
     this.logger.debug(`Ротация для подписки: ${sub.name} (${sub.uuid})`);
 
-    const availablePanelIds = new Set(availablePanels.map((panel) => panel.id));
+    const selectedPanelIds = this.getSelectedPanelIds(sub);
+    const targetPanels = this.filterPanelsForSubscription(sub, availablePanels);
+    const targetAvailablePanelIds = new Set(
+      targetPanels.map((panel) => panel.id),
+    );
 
     if (sub.inbounds && sub.inbounds.length > 0) {
       for (const inbound of sub.inbounds) {
-        const isSingletonInbound = inbound.xuiPanelId === null;
-        const isAvailablePanelInbound =
-          inbound.xuiPanelId !== null && availablePanelIds.has(inbound.xuiPanelId);
+        if (inbound.xuiPanelId === null) {
+          await this.inboundRepo.delete(inbound.id);
+          continue;
+        }
 
-        if (!isSingletonInbound && !isAvailablePanelInbound) {
+        const panelId = inbound.xuiPanelId;
+        const isSelectedPanelInbound =
+          !selectedPanelIds || selectedPanelIds.has(panelId);
+        const isAvailableTargetPanelInbound = targetAvailablePanelIds.has(panelId);
+
+        if (isSelectedPanelInbound && !isAvailableTargetPanelInbound) {
           continue;
         }
 
@@ -279,7 +323,7 @@ export class RotationService implements OnModuleInit {
 
     await this.createSingletonInbounds(sub);
 
-    for (const panel of availablePanels) {
+    for (const panel of targetPanels) {
       await this.createPanelInbounds(sub, domains, panel);
     }
   }
@@ -617,25 +661,38 @@ export class RotationService implements OnModuleInit {
       };
     }
 
+    const needsPanels = this.hasPanelBoundConfigs(sub);
     const { availablePanels, failedPanels } = await this.getAvailablePanels();
-    const totalPanels = availablePanels.length + failedPanels.length;
+    const selectedAvailablePanels = this.filterPanelsForSubscription(
+      sub,
+      availablePanels,
+    );
+    const selectedFailedPanels = this.filterPanelsForSubscription(sub, failedPanels);
+    const totalSelectedPanels =
+      selectedAvailablePanels.length + selectedFailedPanels.length;
 
-    if (totalPanels === 0) {
+    if (needsPanels && totalSelectedPanels === 0) {
       return {
         success: false,
-        message: 'Не добавлено ни одной панели 3x-ui',
+        message: Array.isArray(sub.xuiPanelIds)
+          ? 'Для подписки не выбрана ни одна панель 3x-ui'
+          : 'Не добавлено ни одной панели 3x-ui',
       };
     }
 
-    if (availablePanels.length === 0) {
+    if (needsPanels && selectedAvailablePanels.length === 0) {
       return {
         success: false,
-        message: 'Не удалось войти ни в одну панель 3x-ui',
+        message: Array.isArray(sub.xuiPanelIds)
+          ? 'Не удалось войти ни в одну выбранную панель 3x-ui'
+          : 'Не удалось войти ни в одну панель 3x-ui',
       };
     }
 
-    const domains = await this.domainRepo.find({ where: { isEnabled: true } });
-    if (domains.length === 0) {
+    const domains = needsPanels
+      ? await this.domainRepo.find({ where: { isEnabled: true } })
+      : [];
+    if (needsPanels && domains.length === 0) {
       this.logger.warn('Список доменов пуст! Ротация невозможна.');
       return { success: false, message: 'Список доменов пуст!' };
     }
@@ -647,8 +704,8 @@ export class RotationService implements OnModuleInit {
     return {
       success: true,
       message: this.buildResultMessage(
-        availablePanels,
-        failedPanels,
+        selectedAvailablePanels,
+        selectedFailedPanels,
         tunnelSync,
       ),
     };
