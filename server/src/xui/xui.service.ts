@@ -90,11 +90,11 @@ export class XuiService {
   async addInbound(
     panelId: number,
     inboundConfig: { port: number; [key: string]: unknown } | XuiInboundRaw,
-  ): Promise<number | null> {
+  ): Promise<{ id: number; port: number } | null> {
     const panel = await this.panelsService.findOne(panelId);
     let attempts = 0;
     const maxAttempts = 3;
-    let currentConfig = { ...inboundConfig };
+    let currentConfig = { ...inboundConfig } as XuiInboundRaw;
 
     this.logger.log(
       `Adding inbound on panel ${panel.name} using port ${currentConfig.port}`,
@@ -114,7 +114,7 @@ export class XuiService {
           this.logger.log(
             `Inbound created on panel ${panel.name} with ID: ${res.data.obj.id}`,
           );
-          return res.data.obj.id;
+          return { id: res.data.obj.id, port: currentConfig.port };
         }
 
         const message = res.data?.msg || '';
