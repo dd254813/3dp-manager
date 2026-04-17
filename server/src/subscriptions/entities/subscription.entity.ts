@@ -26,6 +26,9 @@ export class Subscription {
   isAutoRotationEnabled: boolean;
 
   @Column({ type: 'simple-json', nullable: true })
+  xuiPanelIds: number[] | null;
+
+  @Column({ type: 'simple-json', nullable: true })
   inboundsConfig: Array<{
     type?: string;
     port?: number | string;
