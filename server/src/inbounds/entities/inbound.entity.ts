@@ -15,6 +15,9 @@ export class Inbound {
   @Column()
   port: number;
 
+  @Column({ nullable: true })
+  relayPort: number | null;
+
   @Column()
   protocol: string;
 
