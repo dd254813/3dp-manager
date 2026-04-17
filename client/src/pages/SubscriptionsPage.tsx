@@ -59,6 +59,7 @@ interface Subscription {
   name: string;
   uuid: string;
   inbounds: InboundRecord[];
+  xuiPanelIds?: number[] | null;
   inboundsConfig?: Array<{
     type?: string;
     port?: number | string;
@@ -165,6 +166,9 @@ export default function SubscriptionsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [inbounds, setInbounds] = useState<InboundConfigUI[]>([]);
+  const [useAllPanels, setUseAllPanels] = useState(true);
+  const [selectedPanelIds, setSelectedPanelIds] = useState<number[]>([]);
+  const [panelSelectionError, setPanelSelectionError] = useState('');
   const [portErrors, setPortErrors] = useState<Record<string, string>>({});
 
   const [linksOpen, setLinksOpen] = useState(false);
@@ -213,6 +217,22 @@ export default function SubscriptionsPage() {
     loadSubs();
   }, [loadSubs]);
 
+  useEffect(() => {
+    if (open && useAllPanels) {
+      setSelectedPanelIds(panels.map((panel) => panel.id));
+    }
+  }, [open, panels, useAllPanels]);
+
+  const getPanelLabel = useCallback(
+    (panelId: number) => {
+      const panel = panels.find((item) => item.id === panelId);
+      return panel
+        ? `${panel.geoFlag || ''} ${panel.name}`.trim()
+        : `Panel ${panelId}`;
+    },
+    [panels],
+  );
+
   const getInboundSummary = useCallback(
     (sub: Subscription) => {
       const total = sub.inbounds?.length || 0;
@@ -229,10 +249,7 @@ export default function SubscriptionsPage() {
           continue;
         }
 
-        const panel = panels.find((item) => item.id === inbound.xuiPanelId);
-        const label = panel
-          ? `${panel.geoFlag || ''} ${panel.name}`.trim()
-          : `Panel ${inbound.xuiPanelId}`;
+        const label = getPanelLabel(inbound.xuiPanelId);
         counts.set(label, (counts.get(label) || 0) + 1);
       }
 
@@ -248,7 +265,22 @@ export default function SubscriptionsPage() {
         breakdown: parts.join(' • '),
       };
     },
-    [panels],
+    [getPanelLabel],
+  );
+
+  const getTargetPanelSummary = useCallback(
+    (sub: Subscription) => {
+      if (!Array.isArray(sub.xuiPanelIds)) {
+        return 'Все панели';
+      }
+
+      if (sub.xuiPanelIds.length === 0) {
+        return 'Панели не выбраны';
+      }
+
+      return sub.xuiPanelIds.map((panelId) => getPanelLabel(panelId)).join(', ');
+    },
+    [getPanelLabel],
   );
 
   const handleActionMenuClick = (
@@ -279,6 +311,9 @@ export default function SubscriptionsPage() {
       { id: generateId(), type: 'vmess-tcp', port: 'random', sni: 'random', link: '' },
       { id: generateId(), type: 'shadowsocks-tcp', port: 'random', sni: 'random', link: '' },
     ]);
+    setUseAllPanels(true);
+    setSelectedPanelIds(panels.map((panel) => panel.id));
+    setPanelSelectionError('');
     setPortErrors({});
     setOpen(true);
   };
@@ -309,6 +344,15 @@ export default function SubscriptionsPage() {
       ]);
     }
 
+    if (Array.isArray(sub.xuiPanelIds)) {
+      setUseAllPanels(false);
+      setSelectedPanelIds(sub.xuiPanelIds);
+    } else {
+      setUseAllPanels(true);
+      setSelectedPanelIds(panels.map((panel) => panel.id));
+    }
+
+    setPanelSelectionError('');
     setPortErrors({});
     setOpen(true);
   };
@@ -328,6 +372,35 @@ export default function SubscriptionsPage() {
         return next;
       });
     }
+  };
+
+  const handleToggleAllPanels = (checked: boolean) => {
+    setUseAllPanels(checked);
+    setPanelSelectionError('');
+    setSelectedPanelIds(checked ? panels.map((panel) => panel.id) : []);
+  };
+
+  const handleTogglePanelSelection = (panelId: number, checked: boolean) => {
+    setPanelSelectionError('');
+
+    if (useAllPanels) {
+      if (checked) {
+        return;
+      }
+
+      setUseAllPanels(false);
+      setSelectedPanelIds(
+        panels.map((panel) => panel.id).filter((id) => id !== panelId),
+      );
+      return;
+    }
+
+    setSelectedPanelIds((prev) => {
+      if (checked) {
+        return Array.from(new Set([...prev, panelId]));
+      }
+      return prev.filter((id) => id !== panelId);
+    });
   };
 
   const addInbound = () => {
@@ -388,15 +461,36 @@ export default function SubscriptionsPage() {
       return;
     }
 
+    const hasPanelBoundInbounds = inbounds.some((inbound) => inbound.type !== 'custom');
+    if (hasPanelBoundInbounds && panels.length === 0) {
+      setSnackbar({
+        open: true,
+        type: 'error',
+        message: 'Сначала добавьте хотя бы одну панель 3x-ui в Настройках',
+      });
+      return;
+    }
+
+    if (!useAllPanels && hasPanelBoundInbounds && selectedPanelIds.length === 0) {
+      setPanelSelectionError('Выберите хотя бы одну панель 3x-ui');
+      setSnackbar({
+        open: true,
+        type: 'error',
+        message: 'Выберите серверы для генерации подписки',
+      });
+      return;
+    }
+
     const payload = {
       name,
+      xuiPanelIds: useAllPanels ? null : selectedPanelIds,
       inboundsConfig: inbounds.map((i) => {
         if (i.type === 'custom') {
           return { type: i.type, link: i.link };
         }
         return {
           type: i.type,
-          port: i.port === 'random' ? 'random' : parseInt(i.port),
+          port: i.port === 'random' ? 'random' : parseInt(i.port, 10),
           sni: i.sni,
         };
       }),
@@ -554,15 +648,26 @@ export default function SubscriptionsPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 2,
+          mb: 3,
+        }}
+      >
         <Typography variant={isMobile ? 'h5' : 'h4'}>Подписки</Typography>
         {tunnels.length > 0 && (
           <FormControl
             variant="standard"
             size="small"
-            sx={{ minWidth: 220, justifyContent: 'center' }}
+            sx={{ minWidth: 240, justifyContent: 'center' }}
           >
+            <InputLabel id="subscription-output-label">Точка выдачи</InputLabel>
             <Select
+              labelId="subscription-output-label"
               value={selectedServer}
               onChange={(e) => setSelectedServer(e.target.value)}
               startAdornment={
@@ -603,6 +708,7 @@ export default function SubscriptionsPage() {
             <TableRow>
               <TableCell>Имя</TableCell>
               <TableCell>UUID</TableCell>
+              <TableCell>Серверы</TableCell>
               <TableCell>Инбаунды</TableCell>
               <TableCell>Авторотация</TableCell>
               <TableCell align="right">Действия</TableCell>
@@ -615,6 +721,16 @@ export default function SubscriptionsPage() {
                 <TableRow key={sub.id}>
                   <TableCell sx={{ fontWeight: 700 }}>{sub.name}</TableCell>
                   <TableCell sx={{ fontFamily: 'monospace' }}>{sub.uuid}</TableCell>
+                  <TableCell>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {getTargetPanelSummary(sub)}
+                    </Typography>
+                    {!Array.isArray(sub.xuiPanelIds) && (
+                      <Typography variant="caption" color="textSecondary">
+                        Авто: текущие и новые панели
+                      </Typography>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
                       {summary.total}
@@ -757,6 +873,81 @@ export default function SubscriptionsPage() {
             onChange={(e) => setName(e.target.value)}
             sx={{ mb: 4 }}
           />
+
+          <Box sx={{ mb: 4 }}>
+            <Typography variant="h6" sx={{ mb: 1.5 }}>
+              Серверы 3x-ui
+            </Typography>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+              Здесь выбирается, на каких панелях создавать инбаунды для подписки.
+              Переключатель "Точка выдачи" вверху страницы влияет только на ссылку
+              подписки и relay-замену адреса.
+            </Typography>
+
+            {panels.length === 0 ? (
+              <Alert severity="warning">
+                Сначала добавьте хотя бы одну панель 3x-ui на вкладке Настройки.
+              </Alert>
+            ) : (
+              <Box
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 2,
+                  p: 2,
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 1.5 }}>
+                  <Checkbox
+                    checked={useAllPanels}
+                    onChange={(e) => handleToggleAllPanels(e.target.checked)}
+                  />
+                  <Box sx={{ pt: 1 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                      Все панели
+                    </Typography>
+                    <Typography variant="caption" color="textSecondary">
+                      Подписка будет использовать все текущие и новые панели 3x-ui.
+                    </Typography>
+                  </Box>
+                </Box>
+
+                <Box sx={{ pl: 1 }}>
+                  {panels.map((panel) => {
+                    const checked = useAllPanels || selectedPanelIds.includes(panel.id);
+                    return (
+                      <Box
+                        key={panel.id}
+                        sx={{ display: 'flex', alignItems: 'flex-start' }}
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onChange={(e) =>
+                            handleTogglePanelSelection(panel.id, e.target.checked)
+                          }
+                        />
+                        <Box sx={{ pt: 1 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                            {getPanelLabel(panel.id)}
+                          </Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            Только эта панель будет участвовать в генерации, если
+                            выключен режим "Все панели".
+                          </Typography>
+                        </Box>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              </Box>
+            )}
+
+            {panelSelectionError && (
+              <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
+                {panelSelectionError}
+              </Typography>
+            )}
+          </Box>
 
           <Typography variant="h6" sx={{ mb: 2 }}>
             Инбаунды ({inbounds.length}/20)
