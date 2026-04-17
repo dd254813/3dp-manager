@@ -341,6 +341,7 @@ sync_source_tree() {
   fi
   if [[ -f "${DOWNLOADED_SOURCE_DIR}/migrate_to_fork.sh" ]]; then
     cp "${DOWNLOADED_SOURCE_DIR}/migrate_to_fork.sh" "${PROJECT_DIR}/migrate_to_fork.sh"
+    chmod +x "${PROJECT_DIR}/migrate_to_fork.sh"
   fi
 }
 
