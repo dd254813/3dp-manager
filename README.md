@@ -1,5 +1,12 @@
 [English](/README_EN.md) | [中文](/README_CN.md) | [فارسی](/README_IR.md) | [Türkmençe](/README_TK.md)
 
+> [!NOTE]
+> Это форк `dd254813/3dp-manager` с доработками относительно оригинального `denpiligrim/3dp-manager`:
+> - поддержка нескольких панелей `3x-ui` в разделе `Настройки`;
+> - подписки создаются для выбранных панелей или сразу для всех панелей;
+> - ротация, relay/tunnels и выдача подписок работают с multi-panel схемой;
+> - `Hysteria2` настраивается отдельно для каждой панели `3x-ui`.
+
 <p><img src="https://denpiligrim.ru/storage/images/3dp-manager.png" alt="3dp-manager preview"></p>
 
 ![Version](https://img.shields.io/badge/version-2.1.0-blue.svg) [![License](https://img.shields.io/badge/license-GPL%20V3-blue.svg?longCache=true)](https://www.gnu.org/licenses/gpl-3.0) [![Telegram](https://img.shields.io/badge/Telegram-26A5E4?style=flat&logo=telegram&logoColor=white)](https://t.me/denpiligrim_web) [![YouTube Channel Subscribers](https://img.shields.io/youtube/channel/subscribers/UCOv2tFFYDY4mXOM60PVz8zw)](https://www.youtube.com/@denpiligrim)
