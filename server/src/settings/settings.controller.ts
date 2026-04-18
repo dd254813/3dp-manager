@@ -27,6 +27,7 @@ interface PanelBody {
   hysteriaPassword?: string;
   hysteriaObfsPassword?: string;
   hysteriaSni?: string;
+  hysteriaAllowInsecure?: boolean;
 }
 
 @Controller('settings')
