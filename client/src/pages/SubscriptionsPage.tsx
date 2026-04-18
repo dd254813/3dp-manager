@@ -94,6 +94,7 @@ interface XuiPanelSummary {
   id: number;
   name: string;
   geoFlag?: string;
+  geoCountry?: string;
 }
 
 const CONNECTION_OPTIONS = [
@@ -142,6 +143,18 @@ const patchLink = (link: string, newHost: string, newPort?: number): string => {
 };
 
 const generateId = () => Math.random().toString(36).substring(7);
+
+const decodeDisplayValue = (value?: string | null) => {
+  if (!value) {
+    return '';
+  }
+
+  try {
+    return value.includes('%') ? decodeURIComponent(value) : value;
+  } catch {
+    return value;
+  }
+};
 
 const getSubscriptionUrl = (uuid: string, tunnelId: string | number) => {
   const tunnelPart = tunnelId !== 'main' ? `/${tunnelId}` : '';
@@ -226,9 +239,14 @@ export default function SubscriptionsPage() {
   const getPanelLabel = useCallback(
     (panelId: number) => {
       const panel = panels.find((item) => item.id === panelId);
-      return panel
-        ? `${panel.geoFlag || ''} ${panel.name}`.trim()
-        : `Panel ${panelId}`;
+      if (!panel) {
+        return `Panel ${panelId}`;
+      }
+
+      const flag = decodeDisplayValue(panel.geoFlag);
+      const locationName = decodeDisplayValue(panel.geoCountry || panel.name);
+
+      return [flag, locationName].filter(Boolean).join(' ').trim();
     },
     [panels],
   );
@@ -237,7 +255,7 @@ export default function SubscriptionsPage() {
     (sub: Subscription) => {
       const total = sub.inbounds?.length || 0;
       if (total === 0) {
-        return { total: 0, breakdown: '' };
+        return { total: 0, items: [] as string[] };
       }
 
       const counts = new Map<string, number>();
@@ -253,16 +271,16 @@ export default function SubscriptionsPage() {
         counts.set(label, (counts.get(label) || 0) + 1);
       }
 
-      const parts = Array.from(counts.entries()).map(
+      const items = Array.from(counts.entries()).map(
         ([label, count]) => `${label}: ${count}`,
       );
       if (sharedCount > 0) {
-        parts.push(`общие: ${sharedCount}`);
+        items.push(`Общие: ${sharedCount}`);
       }
 
       return {
         total,
-        breakdown: parts.join(' • '),
+        items,
       };
     },
     [getPanelLabel],
@@ -708,7 +726,39 @@ export default function SubscriptionsPage() {
       </Box>
 
       <Paper sx={{ overflowX: 'auto' }}>
-        <Table>
+        <Table
+          sx={{
+            tableLayout: 'fixed',
+            minWidth: 1060,
+            '& th:nth-of-type(1), & td:nth-of-type(1)': {
+              width: 160,
+              verticalAlign: 'top',
+            },
+            '& th:nth-of-type(2), & td:nth-of-type(2)': {
+              width: 220,
+              verticalAlign: 'top',
+            },
+            '& th:nth-of-type(3), & td:nth-of-type(3)': {
+              width: 240,
+              verticalAlign: 'top',
+            },
+            '& th:nth-of-type(4), & td:nth-of-type(4)': {
+              width: 300,
+              verticalAlign: 'top',
+            },
+            '& th:nth-of-type(5), & td:nth-of-type(5)': {
+              width: 110,
+              verticalAlign: 'top',
+              textAlign: 'center',
+              whiteSpace: 'nowrap',
+            },
+            '& th:nth-of-type(6), & td:nth-of-type(6)': {
+              width: 150,
+              verticalAlign: 'top',
+              whiteSpace: 'nowrap',
+            },
+          }}
+        >
           <TableHead>
             <TableRow>
               <TableCell>Имя</TableCell>
@@ -722,28 +772,44 @@ export default function SubscriptionsPage() {
           <TableBody>
             {subs.map((sub) => {
               const summary = getInboundSummary(sub);
+              const summaryItems = summary.items;
               return (
                 <TableRow key={sub.id}>
                   <TableCell sx={{ fontWeight: 700 }}>{sub.name}</TableCell>
-                  <TableCell sx={{ fontFamily: 'monospace' }}>{sub.uuid}</TableCell>
+                  <TableCell sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                    {sub.uuid}
+                  </TableCell>
                   <TableCell>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.4 }}>
                       {getTargetPanelSummary(sub)}
                     </Typography>
                     {!Array.isArray(sub.xuiPanelIds) && (
-                      <Typography variant="caption" color="textSecondary">
+                      <Typography
+                        variant="caption"
+                        color="textSecondary"
+                        sx={{ display: 'block', mt: 0.5, lineHeight: 1.4 }}
+                      >
                         Авто: текущие и новые панели
                       </Typography>
                     )}
                   </TableCell>
                   <TableCell>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
                       {summary.total}
                     </Typography>
-                    {summary.breakdown && (
-                      <Typography variant="caption" color="textSecondary">
-                        {summary.breakdown}
-                      </Typography>
+                    {summaryItems.length > 0 && (
+                      <Box sx={{ mt: 0.75, display: 'grid', gap: 0.5 }}>
+                        {summaryItems.map((item) => (
+                          <Typography
+                            key={`${sub.id}-${item}`}
+                            variant="caption"
+                            color="textSecondary"
+                            sx={{ display: 'block', lineHeight: 1.4 }}
+                          >
+                            {item}
+                          </Typography>
+                        ))}
+                      </Box>
                     )}
                   </TableCell>
                   <TableCell>
