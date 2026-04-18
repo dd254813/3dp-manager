@@ -640,7 +640,7 @@ export class InboundBuilderService {
     }
 
     const params = new URLSearchParams();
-    params.set('insecure', options?.allowInsecure ? '1' : '0');
+    params.set('insecure', options?.allowInsecure === false ? '0' : '1');
     params.set('sni', sni || serverAddress);
     params.set('obfs', obfs);
     params.set('obfs-password', obfsPass);
