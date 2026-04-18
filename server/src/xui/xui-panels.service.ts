@@ -25,6 +25,7 @@ interface XuiPanelPayload {
   hysteriaPassword?: string;
   hysteriaObfsPassword?: string;
   hysteriaSni?: string;
+  hysteriaAllowInsecure?: boolean;
 }
 
 @Injectable()
@@ -82,6 +83,8 @@ export class XuiPanelsService {
       hysteriaObfsPassword:
         payload.hysteriaObfsPassword ?? current.hysteriaObfsPassword,
       hysteriaSni: payload.hysteriaSni ?? current.hysteriaSni,
+      hysteriaAllowInsecure:
+        payload.hysteriaAllowInsecure ?? current.hysteriaAllowInsecure,
     });
 
     Object.assign(current, prepared);
@@ -112,6 +115,7 @@ export class XuiPanelsService {
       payload.hysteriaObfsPassword,
     );
     const hysteriaSni = this.normalizeOptionalString(payload.hysteriaSni);
+    const hysteriaAllowInsecure = payload.hysteriaAllowInsecure ?? false;
 
     if (!name) {
       throw new BadRequestException('Введите название панели');
@@ -147,7 +151,11 @@ export class XuiPanelsService {
           ? parseInt(payload.hysteriaPort, 10)
           : payload.hysteriaPort;
 
-      if (!Number.isFinite(hysteriaPort) || hysteriaPort <= 0 || hysteriaPort > 65535) {
+      if (
+        !Number.isFinite(hysteriaPort) ||
+        hysteriaPort <= 0 ||
+        hysteriaPort > 65535
+      ) {
         throw new BadRequestException('Некорректный порт Hysteria2');
       }
     }
@@ -225,6 +233,7 @@ export class XuiPanelsService {
       hysteriaPassword,
       hysteriaObfsPassword,
       hysteriaSni,
+      hysteriaAllowInsecure,
     };
   }
 
