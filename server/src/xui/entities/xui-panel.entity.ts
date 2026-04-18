@@ -56,6 +56,9 @@ export class XuiPanel {
   @Column({ nullable: true })
   hysteriaSni: string | null;
 
+  @Column({ default: false })
+  hysteriaAllowInsecure: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 
