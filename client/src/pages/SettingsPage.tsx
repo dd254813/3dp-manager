@@ -79,6 +79,18 @@ const EMPTY_PANEL_FORM = {
   hysteriaSni: '',
 };
 
+const decodeDisplayValue = (value?: string | null) => {
+  if (!value) {
+    return '';
+  }
+
+  try {
+    return value.includes('%') ? decodeURIComponent(value) : value;
+  } catch {
+    return value;
+  }
+};
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState({
     rotation_interval: '30',
@@ -451,6 +463,13 @@ export default function SettingsPage() {
     });
   };
 
+  const getPanelLocationLabel = useCallback((panel: XuiPanel) => {
+    const flag = decodeDisplayValue(panel.geoFlag);
+    const country = decodeDisplayValue(panel.geoCountry);
+
+    return [flag, country].filter(Boolean).join(' ').trim();
+  }, []);
+
   const openCreatePanel = () => {
     setPanelDialog({ open: true, editingId: null });
     resetPanelForm();
@@ -754,34 +773,38 @@ export default function SettingsPage() {
                     key={panel.id}
                     sx={{
                       px: 0,
-                      py: 1.5,
+                      py: 2,
                       borderBottom: '1px solid',
                       borderColor: 'divider',
                       '&:last-child': { borderBottom: 'none' },
+                      display: 'block',
                     }}
                   >
-                    <Box sx={{ width: '100%' }}>
-                      <Stack
-                        direction={isMobile ? 'column' : 'row'}
-                        justifyContent="space-between"
-                        alignItems={isMobile ? 'flex-start' : 'center'}
-                        spacing={2}
-                      >
-                        <Box>
+                    <Box
+                      sx={{
+                        width: '100%',
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) auto',
+                        gap: 2,
+                        alignItems: 'start',
+                      }}
+                    >
+                      <Box sx={{ minWidth: 0 }}>
+                        <Stack spacing={0.75}>
                           <Stack
                             direction="row"
                             alignItems="center"
                             spacing={1}
-                            sx={{ mb: 0.5, flexWrap: 'wrap' }}
+                            sx={{ flexWrap: 'wrap' }}
                           >
                             <Typography variant="body1" sx={{ fontWeight: 600 }}>
                               {panel.name}
                             </Typography>
-                            {(panel.geoFlag || panel.geoCountry) && (
+                            {getPanelLocationLabel(panel) && (
                               <Chip
                                 size="small"
                                 variant="outlined"
-                                label={`${panel.geoFlag || ''} ${panel.geoCountry || ''}`.trim()}
+                                label={getPanelLocationLabel(panel)}
                               />
                             )}
                             {panel.hysteriaEnabled && (
@@ -793,30 +816,48 @@ export default function SettingsPage() {
                               />
                             )}
                           </Stack>
-                          <Typography variant="body2" color="textSecondary">
+                          <Typography
+                            variant="body2"
+                            color="textSecondary"
+                            sx={{ wordBreak: 'break-word' }}
+                          >
                             {panel.url}
                           </Typography>
-                          <Typography variant="caption" color="textSecondary">
-                            {[panel.host, panel.ip].filter(Boolean).join(' • ')}
-                          </Typography>
-                          {panel.hysteriaEnabled && panel.hysteriaSni && (
-                            <Typography variant="caption" display="block" color="textSecondary">
-                              Hysteria2 SNI: {panel.hysteriaSni}
+                          {[panel.host, panel.ip].filter(Boolean).length > 0 && (
+                            <Typography
+                              variant="caption"
+                              display="block"
+                              color="textSecondary"
+                            >
+                              {[panel.host, panel.ip].filter(Boolean).join(' • ')}
                             </Typography>
                           )}
-                        </Box>
-
-                        <Stack direction={isMobile ? 'column' : 'row'} spacing={1}>
-                          <Button size="small" onClick={() => handleCheckPanelConnection(panel)}>
-                            Проверить
-                          </Button>
-                          <Button size="small" onClick={() => openEditPanel(panel)}>
-                            Изменить
-                          </Button>
-                          <Button size="small" color="error" onClick={() => handleDeletePanel(panel)}>
-                            Удалить
-                          </Button>
+                          {panel.hysteriaEnabled && panel.hysteriaSni && (
+                            <Typography variant="caption" display="block" color="textSecondary">
+                              Hysteria2 SNI: {decodeDisplayValue(panel.hysteriaSni)}
+                            </Typography>
+                          )}
                         </Stack>
+                      </Box>
+
+                      <Stack
+                        direction={isMobile ? 'column' : 'row'}
+                        spacing={1}
+                        sx={{
+                          minWidth: isMobile ? '100%' : 'auto',
+                          alignItems: isMobile ? 'stretch' : 'center',
+                          justifyContent: isMobile ? 'flex-start' : 'flex-end',
+                        }}
+                      >
+                        <Button size="small" onClick={() => handleCheckPanelConnection(panel)}>
+                          Проверить
+                        </Button>
+                        <Button size="small" onClick={() => openEditPanel(panel)}>
+                          Изменить
+                        </Button>
+                        <Button size="small" color="error" onClick={() => handleDeletePanel(panel)}>
+                          Удалить
+                        </Button>
                       </Stack>
                     </Box>
                   </ListItem>
